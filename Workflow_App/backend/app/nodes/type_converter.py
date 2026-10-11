@@ -9,14 +9,6 @@ def type_converter_node(state, config):
     print("state of type_converter_node : ",state)
     data = state.get("data", {})
 
-    # # Priority: start → converted (chained) → any last value
-    # if "start" in data:
-    #     value = data["start"]
-    # elif "converted" in data:
-    #     value = data["converted"]
-    # else:
-    #     # fallback: last value in data dict
-    #     value = list(data.values())[-1] if data else ""
     value = state.get("current_value", "")
 
     op = config.get("operation", "str")
@@ -41,12 +33,6 @@ def type_converter_node(state, config):
     else:
         result = value
 
-    # return {
-    #     "data": {
-    #         **data,
-    #         "converted": result,
-    #     }
-    # }
     return {
 
     "current_value": result,

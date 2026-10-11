@@ -8,10 +8,6 @@ def output_node(state, config):
     print("state of output_node : ",state)
     data = state.get("data", {})
 
-    # return {
-    #     "data": data,
-    #     "final_output": data.get("converted", data.get("start", data)),
-    # }
     return {
 
     "data": data,

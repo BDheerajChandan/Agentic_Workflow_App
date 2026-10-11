@@ -1,33 +1,38 @@
-# main.py
+# app/main.py
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers.graph_router import router
-from app.rag.ingest import build_vectorstore
 
-app = FastAPI(title="Dynamic LangGraph Engine")
+from app.routers.graph_router import router as graph_router
+from app.routers.flow_router import router as flow_router
+from app.routers.local_files_router import router as local_files_router
+from app import db
 
-# =========================
-# BUILD VECTOR DB ON START
-# =========================
-build_vectorstore()
 
-# ✅ CORS SETUP (IMPORTANT FOR FRONTEND)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.init_db()
+    yield
+    pool = await db.get_pool()
+    await pool.close()
+
+
+app = FastAPI(title="Dynamic LangGraph Engine", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "*",
-        "http://localhost:8000"
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="/graph")
+app.include_router(graph_router, prefix="/graph")
+app.include_router(flow_router)
+app.include_router(local_files_router)
+
 
 @app.get("/")
 def root():

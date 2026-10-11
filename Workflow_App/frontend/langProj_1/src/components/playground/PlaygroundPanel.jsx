@@ -206,7 +206,7 @@ const styles = {
     borderLeft: "1px solid #1e293b",
     display: "flex",
     flexDirection: "column",
-    height: "100vh",
+    height: "100%",
     color: "white",
   },
 
