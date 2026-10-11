@@ -10,6 +10,7 @@ export default function FlowListPage({ onOpen, onNew }) {
   const [flows,   setFlows]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
+  const [query,   setQuery]   = useState("");
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
 
   const [botTarget,  setBotTarget]  = useState(null); // { id, name } of the workflow
@@ -44,6 +45,19 @@ export default function FlowListPage({ onOpen, onNew }) {
 
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
+  const q = query.trim().toLowerCase();
+  const filteredFlows = q
+    ? flows.filter((f) =>
+        [
+          f.name, f.route_slug, f.id, f.execution_count,
+          fmt(f.last_executed_at), fmt(f.created_at), fmt(f.updated_at),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      )
+    : flows;
+
   return (
     <div style={styles.root}>
 
@@ -62,13 +76,15 @@ export default function FlowListPage({ onOpen, onNew }) {
       </div>
 
       <div style={styles.content}>
-        {/* <div style={styles.headingRow}>
-          <div style={styles.heading}>My Flows</div>
-          <button style={styles.newBtn} onClick={onNew}>＋ Create New Flow</button>
-        </div> */}
         <div style={styles.headingRow}>
           <div style={styles.heading}>My Flows</div>
           <div style={styles.headingActions}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search flows…"
+              style={styles.searchInput}
+            />
             <a
               style={styles.chatbotBtn}
               href="http://localhost:5174/"
@@ -111,8 +127,15 @@ export default function FlowListPage({ onOpen, onNew }) {
           </div>
         )}
 
+        {!loading && flows.length > 0 && filteredFlows.length === 0 && (
+          <div style={styles.emptyBox}>
+            <div style={styles.emptyIcon}>⬡</div>
+            <div style={styles.muted}>No flows found</div>
+          </div>
+        )}
+
         <div style={styles.grid}>
-          {flows.map((f) => (
+          {filteredFlows.map((f) => (
             <div
               key={f.id}
               style={styles.card}
@@ -223,6 +246,13 @@ const styles = {
 
   headingActions: {
     display: "flex", alignItems: "center", gap: 10,
+  },
+
+  searchInput: {
+    width: 240, padding: "8px 12px", borderRadius: 9,
+    border: "1px solid #1e293b", background: "#0f172a",
+    color: "#e2e8f0", fontSize: 13, outline: "none",
+    fontFamily: "inherit", boxSizing: "border-box",
   },
 
   chatbotBtn: {

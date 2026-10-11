@@ -27,29 +27,41 @@ SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt", ".html", ".htm", ".md"
 
 # ─── Lazy embeddings ──────────────────────────────────────────────────────────
 
-def _get_embeddings(api_key: str | None = None):
+def _get_embeddings(
+    api_key: str | None = None,
+    provider: str = "openai",
+    model_name: str | None = None,
+):
     """
-    Return OpenAI embeddings instance. Raises with a clear message on failure.
-    If api_key is provided (Dynamic mode) it is used; otherwise falls back to .env (Static mode).
+    Provider-aware embeddings factory. Static mode -> key from .env of the chosen provider;
+    Dynamic mode -> key passed from node config.
     """
-    from langchain_openai import OpenAIEmbeddings
-    key = (api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not set. Please add it to your .env file "
-            "or provide an API key in the node's Dynamic settings."
-        )
-    return OpenAIEmbeddings(api_key=key)
+    from app.providers import build_embeddings
+    return build_embeddings(provider, api_key, model_name)
 
 
-def _get_vectorstore(collection_name: str, api_key: str | None = None):
+def _get_vectorstore(
+    collection_name: str,
+    api_key: str | None = None,
+    provider: str = "openai",
+    model_name: str | None = None,
+):
     from langchain_chroma import Chroma
     return Chroma(
         persist_directory=str(CHROMA_DIR),
         collection_name=collection_name,
-        embedding_function=_get_embeddings(api_key),
+        embedding_function=_get_embeddings(api_key, provider, model_name),
     )
 
+
+def _collection_name(source: str, provider: str, model_name: str | None) -> str:
+    base = "".join(c if c.isalnum() else "_" for c in (source or "default"))[:60]
+    if provider == "openai" and not model_name:
+        return base
+    suffix = "".join(
+        c if c.isalnum() else "_" for c in f"{provider}_{model_name or 'default'}"
+    )[:40].strip("_")
+    return f"{base}__{suffix}"
 
 # ─── Source extractors ────────────────────────────────────────────────────────
 
@@ -245,6 +257,8 @@ def retrieve(
     chunk_overlap: int = 100,
     k: int = 5,
     api_key: str | None = None,          # None -> .env (Static) | str -> Dynamic
+    provider: str = "openai",            # "openai" | "gemini"
+    model_name: str | None = None,       # embedding model; None -> provider default
 ) -> tuple[list[Document], list[float]]:
     """
     Full pipeline:
@@ -252,7 +266,7 @@ def retrieve(
       2. Chunk
       3. Embed → ChromaDB
       4. Retrieve top-k with confidence scores
-    OpenAI is only touched here — never at import/startup time.
+    Embedding providers are only touched here — never at import/startup time.
     """
     print(f"\n📂 Loading documents | locality={source_locality} | source={source!r}")
 
@@ -264,8 +278,7 @@ def retrieve(
     chunks = chunk_documents(raw_docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     print(f"📦 {len(chunks)} chunks from {len(raw_docs)} document(s)")
 
-    safe_name = "".join(c if c.isalnum() else "_" for c in (source or "default"))[:60]
-    vs = _get_vectorstore(safe_name, api_key)
+    vs = _get_vectorstore(_collection_name(source, provider, model_name), api_key, provider, model_name)
     vs.add_documents(chunks)
 
     results = vs.similarity_search_with_score(query, k=k)

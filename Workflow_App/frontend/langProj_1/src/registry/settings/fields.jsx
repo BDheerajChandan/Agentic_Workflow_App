@@ -4,7 +4,16 @@
 import React, { useState } from "react";
 import {
   fieldWrap, lbl, inp, ddSelect, ddArrow, toggle, toggleBtn, eyeBtnStyle,
+  infoBox, sectionNote,
 } from "./styles";
+import useProviderModels from "./useProviderModels";
+
+export const PROVIDER_OPTIONS = [
+  { value: "openai", label: "OpenAI" },
+  { value: "gemini", label: "Gemini" },
+];
+
+export const ENV_KEY_NAMES = { openai: "OPENAI_API_KEY", gemini: "GEMINI_API_KEY" };
 
 export function NativeSelect({ value, onChange, options }) {
   return (
@@ -87,6 +96,54 @@ export function ModeToggle({ mode, onChange }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// OpenAI / Gemini selector (shared by Retriever and Generate)
+export function ProviderField({ value, onChange }) {
+  return (
+    <SelectField
+      label="Provider"
+      value={value || "openai"}
+      onChange={onChange}
+      options={PROVIDER_OPTIONS}
+    />
+  );
+}
+
+// Provider-specific model dropdown, loaded from the backend.
+// defaultValue: model shown/used when nothing is stored. allowEmpty: adds a "Default" option (value "").
+export function ModelField({
+  label = "Model",
+  mode,
+  provider,
+  apiKey,
+  purpose,
+  value,
+  onChange,
+  defaultValue = "",
+  allowEmpty = false,
+}) {
+  const { models, loading, error, needsKey } = useProviderModels({
+    mode, provider, apiKey, purpose,
+  });
+
+  const current = value || defaultValue;
+  const list = [...models];
+  if (current && !list.includes(current)) list.unshift(current);
+
+  const options = [];
+  if (allowEmpty) options.push({ value: "", label: "Default" });
+  list.forEach((m) => options.push({ value: m, label: m }));
+
+  return (
+    <div style={fieldWrap}>
+      <label style={lbl}>{label}</label>
+      <NativeSelect value={current} onChange={onChange} options={options} />
+      {needsKey && <div style={{ ...sectionNote, marginTop: 6, marginBottom: 0 }}>Enter an API key to load models.</div>}
+      {loading && <div style={{ ...sectionNote, marginTop: 6, marginBottom: 0 }}>Loading models…</div>}
+      {error && <div style={infoBox(true)}>⚠ {error}</div>}
     </div>
   );
 }

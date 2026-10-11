@@ -10,11 +10,12 @@ import queue
 import threading
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.graph.builder import build_graph
 from app.schemas.graph_schema import GraphRequest
+from app.variables import VariableError
 from app import db
 
 router = APIRouter()
@@ -27,12 +28,19 @@ class GraphRunRequest(GraphRequest):
 
 @router.post("/run")
 async def run_graph(payload: GraphRunRequest):
-    graph = build_graph(payload.nodes, payload.edges)
+    try:
+        defs = await db.list_variables()
+        graph = build_graph(
+            payload.nodes, payload.edges,
+            variable_defs=defs, flow_id=payload.flow_id,
+        )
 
-    result = graph.invoke({
-        "input": payload.input,
-        "data": {},
-    })
+        result = graph.invoke({
+            "input": payload.input,
+            "data": {},
+        })
+    except VariableError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
     print("result :", result)
 
@@ -53,13 +61,18 @@ async def run_graph(payload: GraphRunRequest):
 async def run_graph_stream(payload: GraphRunRequest):
     events: "queue.Queue[dict]" = queue.Queue()
     loop = asyncio.get_event_loop()
+    defs = await db.list_variables()
 
     def event_callback(node_id: str, status: str):
         events.put({"type": "node", "node_id": node_id, "status": status})
 
     def worker():
         try:
-            graph = build_graph(payload.nodes, payload.edges, event_callback=event_callback)
+            graph = build_graph(
+                payload.nodes, payload.edges,
+                event_callback=event_callback,
+                variable_defs=defs, flow_id=payload.flow_id,
+            )
             result = graph.invoke({"input": payload.input, "data": {}})
             events.put({"type": "result", "result": _serialise(result)})
         except Exception as exc:

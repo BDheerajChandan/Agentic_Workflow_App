@@ -14,6 +14,7 @@ import "reactflow/dist/style.css";
 
 import { runGraphStream, saveFlow, getFlowByRoute } from "../../services/api";
 import PlaygroundPanel from "../playground/PlaygroundPanel";
+import CreateVariableModal from "../CreateVariableModal";
 
 // import { nodeTypes } from "../register_nodes";
 // import SettingsPanel from "../nodes/SettingsPanel";
@@ -73,6 +74,8 @@ function FlowCanvas({ routeSlug, onBack }) {
   const [outputOpen,   setOutputOpen]   = useState(true);
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [nodeSearch, setNodeSearch] = useState("");
+  const [variableModalOpen, setVariableModalOpen] = useState(false);
+  const [variablesVersion,  setVariablesVersion]  = useState(0);
 
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
 
@@ -343,16 +346,7 @@ function FlowCanvas({ routeSlug, onBack }) {
           >
             🧪 Playground
           </button>
-          {/* <button
-            style={styles.playgroundTopBtn}
-            onClick={() => setBotModalOpen(true)}
-          > */}
-          {/* <button
-            style={{ ...styles.playgroundTopBtn, borderColor: "#334155", color: "#94a3b8" }}
-            onClick={() => setBotModalOpen(true)}
-          >
-            🤖 Create Bot
-          </button> */}
+          
         </div>
 
         <div style={styles.topBarCenter}>
@@ -366,46 +360,6 @@ function FlowCanvas({ routeSlug, onBack }) {
 
       <div style={styles.body}>
 
-        {/* <aside style={styles.sidebar}>
-          <div style={styles.sidebarHeader}>
-            <div style={styles.logo}>
-              <span style={styles.logoDot} />
-              LangGraph
-            </div>
-            <div style={styles.logoSub}>Visual Flow Builder</div>
-          </div>
-
-          <div style={styles.sectionLabel}>Nodes</div>
-          {SIDEBAR_NODES.map((n) => (
-            <SidebarNode key={n.type} {...n} onDragStart={onDragStart} />
-          ))}
-
-          <div style={styles.divider} />
-
-          <button
-            style={{ ...styles.runBtn, ...(running ? styles.runBtnDisabled : {}) }}
-            onClick={handleRun}
-            disabled={running}
-          >
-            {running ? <span style={styles.spinner}>⟳</span> : "▶  Run Graph"}
-          </button>
-
-          <button style={styles.clearBtn} onClick={handleClear}>✕  Clear</button>
-
-          <button
-            style={{
-              ...styles.togglePanelBtn,
-              borderColor: outputOpen ? "#6366f1" : "#1e293b",
-              color:       outputOpen ? "#818cf8" : "#475569",
-            }}
-            onClick={() => {
-              setOutputOpen(!outputOpen);
-              if (!outputOpen) setSettingsOpen(false);
-            }}
-          >
-            {outputOpen ? "▣  Hide Output" : "▣  Show Output"}
-          </button>
-        </aside> */}
         <aside style={styles.sidebar}>
           <div style={styles.sidebarHeader}>
             <div style={styles.logo}>
@@ -435,6 +389,10 @@ function FlowCanvas({ routeSlug, onBack }) {
           </div>
 
           <div style={styles.divider} />
+
+          <button style={styles.variableBtn} onClick={() => setVariableModalOpen(true)}>
+            ＋  Create Variable
+          </button>
 
           <button style={styles.clearBtn} onClick={handleClear}>✕  Clear</button>
 
@@ -483,11 +441,14 @@ function FlowCanvas({ routeSlug, onBack }) {
         </div>
 
         {settingsOpen && (
+          
           <SettingsPanel
             selectedNodeId={selectedNodeId}
             onClose={() => { setSettingsOpen(false); setSelectedNodeId(null); }}
             globalInput={input}
             onGlobalInputChange={setInput}
+            flowId={flowId}
+            variablesVersion={variablesVersion}
           />
         )}
 
@@ -550,6 +511,15 @@ function FlowCanvas({ routeSlug, onBack }) {
           </div>
         )}
       </div>
+
+      {variableModalOpen && (
+        <CreateVariableModal
+          flowId={flowId}
+          flowName={flowName}
+          onClose={() => setVariableModalOpen(false)}
+          onChanged={() => setVariablesVersion((v) => v + 1)}
+        />
+      )}
     </div>
   );
 }
@@ -731,11 +701,18 @@ const styles = {
     boxShadow: "0 4px 16px rgba(99,102,241,0.35)",
   },
   runBtnDisabled: { opacity: 0.6, cursor: "not-allowed" },
+
   clearBtn: {
     width: "100%", padding: "9px 0", borderRadius: 10,
     border: "1px solid #1e293b", background: "transparent",
     color: "#64748b", fontSize: 12, cursor: "pointer", letterSpacing: "0.04em",
   },
+  variableBtn: {
+    width: "100%", padding: "9px 0", borderRadius: 10,
+    border: "1px solid #334155", background: "transparent",
+    color: "#94a3b8", fontSize: 12, cursor: "pointer", letterSpacing: "0.04em",
+  },
+
   togglePanelBtn: {
     width: "100%", padding: "9px 0", borderRadius: 10,
     border: "1px solid", background: "transparent",

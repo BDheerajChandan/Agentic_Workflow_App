@@ -115,3 +115,14 @@ export const sectionNote = {
   border: "1px solid rgba(99,102,241,0.15)",
   borderRadius: 8,
 };
+
+
+export const variableBox = {
+  marginTop: 16, paddingTop: 14,
+  borderTop: "1px solid #1e293b",
+};
+
+export const checkRow = {
+  display: "flex", alignItems: "center", gap: 8,
+  fontSize: 12, color: "#cbd5e1", cursor: "pointer",
+};

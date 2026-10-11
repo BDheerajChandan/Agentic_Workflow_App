@@ -15,6 +15,9 @@ class GraphState(TypedDict, total=False):
 
     final_output: Any
 
+    # execution-scoped runtime variables (name -> value)
+    variables: Dict[str, Any]
+
     # RAG
     question: str
     docs: List[Document]

@@ -2,7 +2,9 @@
 
 import React, { useState } from "react";
 import { browseLocalPath } from "../../services/api";
-import { Field, SelectField, ModeToggle, ApiKeyField } from "./fields";
+import {
+  Field, SelectField, ModeToggle, ApiKeyField, ProviderField, ModelField, ENV_KEY_NAMES,
+} from "./fields";
 import {
   fieldWrap, lbl, inp, toggle, toggleBtn, browseBtnStyle, infoBox, sectionNote,
 } from "./styles";
@@ -17,11 +19,14 @@ const SOURCE_TYPES = [
   { value: "url",   label: "URL / Web page" },
 ];
 
+const DEFAULT_GEMINI_EMBEDDING = "gemini-embedding-001";
+
 export default function RagRetrieveSettings({ localData, patch, selectedNodeId }) {
   const [browseInfo, setBrowseInfo] = useState(null);
   const [browsing,   setBrowsing]   = useState(false);
 
   const configMode = localData.config_mode || "static";
+  const provider   = localData.provider || "openai";
   const locality   = localData.source_locality || "nonlocal";
 
   const handleBrowse = async () => {
@@ -47,9 +52,14 @@ export default function RagRetrieveSettings({ localData, patch, selectedNodeId }
         onChange={(val) => patch({ config_mode: val })}
       />
 
+      <ProviderField
+        value={provider}
+        onChange={(val) => patch({ provider: val, model_name: "", api_key: "" })}
+      />
+
       {configMode === "static" && (
         <div style={sectionNote}>
-          Static: the API key from the backend .env file is used.
+          Static: {ENV_KEY_NAMES[provider]} from the backend .env file is used.
         </div>
       )}
 
@@ -60,6 +70,18 @@ export default function RagRetrieveSettings({ localData, patch, selectedNodeId }
           onChange={(val) => patch({ api_key: val })}
         />
       )}
+
+      <ModelField
+        label="Embedding Model"
+        mode={configMode}
+        provider={provider}
+        apiKey={localData.api_key}
+        purpose="embedding"
+        value={localData.model_name}
+        onChange={(val) => patch({ model_name: val })}
+        defaultValue={provider === "gemini" ? DEFAULT_GEMINI_EMBEDDING : ""}
+        allowEmpty={provider === "openai"}
+      />
 
       <div style={fieldWrap}>
         <label style={lbl}>Data Source</label>

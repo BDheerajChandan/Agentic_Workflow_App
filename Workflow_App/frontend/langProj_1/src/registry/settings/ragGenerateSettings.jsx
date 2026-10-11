@@ -1,19 +1,16 @@
 // src/registry/settings/ragGenerateSettings.jsx
 
 import React from "react";
-import { SelectField, TextAreaField, ModeToggle, ApiKeyField } from "./fields";
+import {
+  TextAreaField, ModeToggle, ApiKeyField, ProviderField, ModelField, ENV_KEY_NAMES,
+} from "./fields";
 import { infoStyle } from "./styles";
 
-const MODEL_OPTIONS = [
-  { value: "gpt-4o-mini",   label: "gpt-4o-mini" },
-  { value: "gpt-4o",        label: "gpt-4o" },
-  { value: "gpt-4.1",       label: "gpt-4.1" },
-  { value: "gpt-4.1-mini",  label: "gpt-4.1-mini" },
-  { value: "gpt-3.5-turbo", label: "gpt-3.5-turbo" },
-];
+const DEFAULT_MODELS = { openai: "gpt-4o-mini", gemini: "gemini-2.5-flash" };
 
 export default function RagGenerateSettings({ localData, patch, selectedNodeId }) {
   const configMode = localData.config_mode || "static";
+  const provider   = localData.provider || "openai";
 
   return (
     <>
@@ -22,25 +19,38 @@ export default function RagGenerateSettings({ localData, patch, selectedNodeId }
         onChange={(val) => patch({ config_mode: val })}
       />
 
+      <ProviderField
+        value={provider}
+        onChange={(val) => patch({ provider: val, model_name: "", api_key: "" })}
+      />
+
       {configMode === "static" && (
         <div style={infoStyle}>
-          RAG Generate uses the LLM configured in the backend.
+          Static: {ENV_KEY_NAMES[provider]} from the backend .env file is used.
         </div>
       )}
 
       {configMode === "dynamic" && (
+        <ApiKeyField
+          key={`${selectedNodeId}-api`}
+          value={localData.api_key}
+          onChange={(val) => patch({ api_key: val })}
+        />
+      )}
+
+      <ModelField
+        label="Model Name"
+        mode={configMode}
+        provider={provider}
+        apiKey={localData.api_key}
+        purpose="chat"
+        value={localData.model_name}
+        onChange={(val) => patch({ model_name: val })}
+        defaultValue={DEFAULT_MODELS[provider]}
+      />
+
+      {configMode === "dynamic" && (
         <>
-          <ApiKeyField
-            key={`${selectedNodeId}-api`}
-            value={localData.api_key}
-            onChange={(val) => patch({ api_key: val })}
-          />
-          <SelectField
-            label="Model Name"
-            value={localData.model_name || MODEL_OPTIONS[0].value}
-            onChange={(val) => patch({ model_name: val })}
-            options={MODEL_OPTIONS}
-          />
           <TextAreaField
             label="System Prompt"
             value={localData.system_prompt}

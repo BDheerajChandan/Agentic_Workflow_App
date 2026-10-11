@@ -2,7 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useReactFlow } from "reactflow";
-import { settingsRegistry } from "./node_registration";
+import { settingsRegistry, variableCapableNodes } from "./node_registration";
+import VariableSection from "./settings/VariableSection";
 import {
   panel, panelHeader, panelTitle, panelSub, closeBtn, panelBody, infoStyle,
 } from "./settings/styles";
@@ -12,6 +13,8 @@ export default function SettingsPanel({
   onClose,
   globalInput,
   onGlobalInputChange,
+  flowId,
+  variablesVersion,
 }) {
   const { getNode, setNodes } = useReactFlow();
 
@@ -77,6 +80,16 @@ export default function SettingsPanel({
           <div style={infoStyle}>
             No settings defined for node type: <strong>{node.type}</strong>
           </div>
+        )}
+
+        {variableCapableNodes.has(node.type) && (
+          <VariableSection
+            key={`${selectedNodeId}-var`}
+            localData={localData}
+            patch={patch}
+            flowId={flowId}
+            variablesVersion={variablesVersion}
+          />
         )}
       </div>
     </div>

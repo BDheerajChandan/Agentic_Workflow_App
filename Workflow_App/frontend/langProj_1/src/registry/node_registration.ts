@@ -30,3 +30,14 @@ export const settingsRegistry: Record<string, any> = {
   rag_retrieve: RagRetrieveSettings,
   rag_generate: RagGenerateSettings,
 };
+
+
+// Nodes whose Settings Panel shows the Variable (Assign / Read) section.
+// Add a node type here to enable variables for it — no other change required.
+export const variableCapableNodes = new Set<string>([
+  "start",
+  "type_converter",
+  "output",
+  "rag_retrieve",
+  "rag_generate",
+]);

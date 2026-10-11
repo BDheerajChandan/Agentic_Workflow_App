@@ -4,37 +4,28 @@ RAG Generate node.
 LLM is instantiated lazily inside the node function —
 never at module import or application startup time.
 
-Static mode  -> .env OPENAI_API_KEY, model gpt-4o-mini, built-in prompts.
-Dynamic mode -> api_key / model_name / user_prompt / system_prompt from node config.
+Static mode  -> provider key from .env (OPENAI_API_KEY / GEMINI_API_KEY), selected provider/model.
+Dynamic mode -> api_key / provider / model_name / user_prompt / system_prompt from node config.
 """
 
-import os
 from langchain_core.messages import SystemMessage, HumanMessage
 
-DEFAULT_MODEL = "gpt-4o-mini"
+from app.providers import DEFAULT_CHAT_MODELS, build_chat_model, normalize_provider
+
+DEFAULT_MODEL = DEFAULT_CHAT_MODELS["openai"]
 DEFAULT_SYSTEM_PROMPT = (
     "Answer ONLY from provided context. "
     "If casual greeting, respond human-like."
 )
 
 
-def _get_llm(api_key: str | None = None, model_name: str | None = None):
+def _get_llm(provider: str = "openai", api_key: str | None = None, model_name: str | None = None):
     """Lazy LLM factory. Raises with a clear message when API key is missing."""
-    from langchain_openai import ChatOpenAI
-    key = (api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not set. Please add it to your .env file "
-            "or provide an API key in the node's Dynamic settings."
-        )
-    return ChatOpenAI(
-        model=(model_name or DEFAULT_MODEL),
-        temperature=0.3,
-        api_key=key,
-    )
+    return build_chat_model(provider, api_key, model_name, temperature=0.3)
 
 
 def rag_generate_node(state, config):
+    cfg      = config or {}
     docs     = state.get("docs", [])
     question = (
         state.get("current_value")
@@ -45,23 +36,23 @@ def rag_generate_node(state, config):
     avg_confidence = round(sum(scores) / len(scores), 2) if scores else 0
 
     # ── Static / Dynamic configuration mode ──────────────────────────────────
-    config_mode = str((config or {}).get("config_mode", "static")).strip().lower()
+    config_mode = str(cfg.get("config_mode", "static")).strip().lower()
+    provider    = normalize_provider(cfg.get("provider"))
+    model_name  = str(cfg.get("model_name", "")).strip() or DEFAULT_CHAT_MODELS[provider]
 
     api_key       = None
-    model_name    = DEFAULT_MODEL
     system_prompt = DEFAULT_SYSTEM_PROMPT
     user_prompt   = ""
 
     if config_mode == "dynamic":
-        api_key = str(config.get("api_key", "")).strip()
+        api_key = str(cfg.get("api_key", "")).strip()
         if not api_key:
             raise ValueError(
                 "RAG Generate node is in Dynamic mode but no API key was provided. "
                 "Enter an API key in the node's Settings panel or switch to Static."
             )
-        model_name    = str(config.get("model_name", "")).strip() or DEFAULT_MODEL
-        system_prompt = str(config.get("system_prompt", "")).strip() or DEFAULT_SYSTEM_PROMPT
-        user_prompt   = str(config.get("user_prompt", "")).strip()
+        system_prompt = str(cfg.get("system_prompt", "")).strip() or DEFAULT_SYSTEM_PROMPT
+        user_prompt   = str(cfg.get("user_prompt", "")).strip()
 
     print("\n" + "=" * 60)
     print("🤖 RAG GENERATION STARTED")
@@ -70,6 +61,7 @@ def rag_generate_node(state, config):
     print(f"📄 Docs Used     : {len(docs)}")
     print(f"🎯 Avg Confidence: {avg_confidence}%")
     print(f"🔑 Config mode   : {config_mode}")
+    print(f"🏷  Provider      : {provider}")
     print(f"🧩 Model         : {model_name}")
 
     context = "\n\n".join([d.page_content for d in docs])
@@ -92,7 +84,7 @@ def rag_generate_node(state, config):
         HumanMessage(content=human_content),
     ]
 
-    llm      = _get_llm(api_key=api_key, model_name=model_name)
+    llm      = _get_llm(provider=provider, api_key=api_key, model_name=model_name)
     response = llm.invoke(messages)
 
     print("\n💡 GENERATED ANSWER:\n")

@@ -192,3 +192,60 @@ export const deleteBot = async (botId: string) => {
   const res = await axios.delete(`${BASE_URL}/bots/${botId}`);
   return res.data;
 };
+
+// ─── Providers / Models ───────────────────────────────────────────────────────
+
+export type ProviderId = "openai" | "gemini";
+
+export interface ProviderModelsRequest {
+  provider: ProviderId;
+  mode: "static" | "dynamic";
+  purpose: "chat" | "embedding";
+  api_key?: string;
+}
+
+export const listProviderModels = async (payload: ProviderModelsRequest) => {
+  const res = await axios.post(`${BASE_URL}/providers/models`, payload);
+  return res.data as { provider: ProviderId; models: string[] };
+};
+
+// ─── Variables ────────────────────────────────────────────────────────────────
+
+export interface Variable {
+  variable_id: number;
+  name: string;
+  visibility: "public" | "private";
+  flow_id: number | null;
+  workflow_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const listVariables = async (flowId?: number | null) => {
+  const res = await axios.get(`${BASE_URL}/variables`, {
+    params: flowId != null ? { flow_id: flowId } : {},
+  });
+  return res.data as { variables: Variable[] };
+};
+
+export const createVariable = async (payload: {
+  name: string;
+  visibility: "public" | "private";
+  flow_id?: number | null;
+}) => {
+  const res = await axios.post(`${BASE_URL}/variables`, payload);
+  return res.data as Variable;
+};
+
+export const updateVariable = async (
+  variableId: number,
+  payload: { name?: string; visibility?: "public" | "private"; flow_id?: number | null }
+) => {
+  const res = await axios.put(`${BASE_URL}/variables/${variableId}`, payload);
+  return res.data as Variable;
+};
+
+export const deleteVariable = async (variableId: number) => {
+  const res = await axios.delete(`${BASE_URL}/variables/${variableId}`);
+  return res.data;
+};

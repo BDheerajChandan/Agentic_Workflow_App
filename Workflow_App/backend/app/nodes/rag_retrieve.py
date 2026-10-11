@@ -1,5 +1,6 @@
 # app/nodes/rag_retrieve.py
 
+from app.providers import normalize_provider
 from app.rag.retriever import retrieve as dynamic_retrieve
 
 
@@ -19,6 +20,9 @@ def rag_retrieve_node(state, config):
 
     # ── Static / Dynamic configuration mode ──────────────────────────────────
     config_mode: str = str(config.get("config_mode", "static")).strip().lower()
+    provider: str    = normalize_provider(config.get("provider"))
+    model_name       = str(config.get("model_name", "")).strip() or None
+
     api_key = None
     if config_mode == "dynamic":
         api_key = str(config.get("api_key", "")).strip()
@@ -43,6 +47,7 @@ def rag_retrieve_node(state, config):
     print(f"🔖 Source type   : {source_type or 'auto'}")
     print(f"📐 Chunk size    : {chunk_size}  |  Overlap: {chunk_overlap}  |  k: {k}")
     print(f"🔑 Config mode   : {config_mode}")
+    print(f"🏷  Provider      : {provider}  |  Model: {model_name or 'default'}")
 
     docs, scores = dynamic_retrieve(
         query=question,
@@ -53,6 +58,8 @@ def rag_retrieve_node(state, config):
         chunk_overlap=chunk_overlap,
         k=k,
         api_key=api_key,
+        provider=provider,
+        model_name=model_name,
     )
 
     avg_confidence = round(sum(scores) / len(scores), 2) if scores else 0

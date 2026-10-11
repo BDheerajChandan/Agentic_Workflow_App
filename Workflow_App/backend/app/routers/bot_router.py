@@ -195,10 +195,16 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
     if not flow:
         raise HTTPException(status_code=404, detail="Tagged workflow not found.")
 
+
+    variable_defs = await db.list_variables()
+
     def _run():
         nodes = [Node.model_validate(n) for n in flow["nodes"]]
         edges = [Edge.model_validate(e) for e in flow["edges"]]
-        graph = build_graph(nodes, edges)
+        graph = build_graph(
+            nodes, edges,
+            variable_defs=variable_defs, flow_id=bot["flow_id"],
+        )
         return graph.invoke({"input": message, "data": {}})
 
     try:
