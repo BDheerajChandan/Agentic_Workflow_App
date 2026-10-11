@@ -69,6 +69,7 @@ function FlowCanvas({ routeSlug, onBack }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [outputOpen,   setOutputOpen]   = useState(true);
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
+  const [nodeSearch, setNodeSearch] = useState("");
 
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
 
@@ -272,6 +273,10 @@ function FlowCanvas({ routeSlug, onBack }) {
     };
   });
 
+  const filteredSidebarNodes = SIDEBAR_NODES.filter((n) =>
+    `${n.label} ${n.desc}`.toLowerCase().includes(nodeSearch.trim().toLowerCase())
+  );
+
   if (loadError) {
     return (
       <div style={{ ...styles.root, alignItems: "center", justifyContent: "center", color: "#fca5a5" }}>
@@ -315,6 +320,14 @@ function FlowCanvas({ routeSlug, onBack }) {
           </button>
 
           <button
+            style={{ ...styles.runTopBtn, ...(running ? styles.runBtnDisabled : {}) }}
+            onClick={handleRun}
+            disabled={running}
+          >
+            {running ? <span style={styles.spinner}>⟳</span> : "▶ Run Graph"}
+          </button>
+
+          <button
             style={{
               ...styles.playgroundTopBtn,
               borderColor: playgroundOpen ? "#6366f1" : "#334155",
@@ -327,6 +340,27 @@ function FlowCanvas({ routeSlug, onBack }) {
           >
             🧪 Playground
           </button>
+          {/* <button
+            style={{ ...styles.saveBtn, ...(saving ? styles.saveBtnDisabled : {}) }}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "💾 Save"}
+          </button>
+
+          <button
+            style={{
+              ...styles.playgroundTopBtn,
+              borderColor: playgroundOpen ? "#6366f1" : "#334155",
+              color:       playgroundOpen ? "#818cf8" : "#94a3b8",
+            }}
+            onClick={() => {
+              setPlaygroundOpen(!playgroundOpen);
+              if (!playgroundOpen) { setSettingsOpen(false); setOutputOpen(false); }
+            }}
+          >
+            🧪 Playground
+          </button> */}
         </div>
 
         <div style={styles.topBarCenter}>
@@ -340,7 +374,7 @@ function FlowCanvas({ routeSlug, onBack }) {
 
       <div style={styles.body}>
 
-        <aside style={styles.sidebar}>
+        {/* <aside style={styles.sidebar}>
           <div style={styles.sidebarHeader}>
             <div style={styles.logo}>
               <span style={styles.logoDot} />
@@ -363,6 +397,52 @@ function FlowCanvas({ routeSlug, onBack }) {
           >
             {running ? <span style={styles.spinner}>⟳</span> : "▶  Run Graph"}
           </button>
+
+          <button style={styles.clearBtn} onClick={handleClear}>✕  Clear</button>
+
+          <button
+            style={{
+              ...styles.togglePanelBtn,
+              borderColor: outputOpen ? "#6366f1" : "#1e293b",
+              color:       outputOpen ? "#818cf8" : "#475569",
+            }}
+            onClick={() => {
+              setOutputOpen(!outputOpen);
+              if (!outputOpen) setSettingsOpen(false);
+            }}
+          >
+            {outputOpen ? "▣  Hide Output" : "▣  Show Output"}
+          </button>
+        </aside> */}
+        <aside style={styles.sidebar}>
+          <div style={styles.sidebarHeader}>
+            <div style={styles.logo}>
+              <span style={styles.logoDot} />
+              LangGraph
+            </div>
+            <div style={styles.logoSub}>Visual Flow Builder</div>
+          </div>
+
+          <div style={styles.nodesHeaderRow}>
+            <div style={{ ...styles.sectionLabel, margin: 0 }}>Nodes</div>
+            <input
+              value={nodeSearch}
+              onChange={(e) => setNodeSearch(e.target.value)}
+              placeholder="Search…"
+              style={styles.nodeSearch}
+            />
+          </div>
+
+          <div style={styles.nodeList}>
+            {filteredSidebarNodes.map((n) => (
+              <SidebarNode key={n.type} {...n} onDragStart={onDragStart} />
+            ))}
+            {filteredSidebarNodes.length === 0 && (
+              <div style={styles.nodeEmpty}>No nodes found</div>
+            )}
+          </div>
+
+          <div style={styles.divider} />
 
           <button style={styles.clearBtn} onClick={handleClear}>✕  Clear</button>
 
@@ -617,8 +697,9 @@ const styles = {
     background: "#0a0f1e", borderRight: "1px solid #1e293b",
     display: "flex", flexDirection: "column",
     padding: "20px 16px", gap: 8,
-    overflowY: "auto", overflowX: "hidden", zIndex: 100,
+    overflow: "hidden", zIndex: 100,
   },
+  
   sidebarHeader: { marginBottom: 8 },
   logo: {
     display: "flex", alignItems: "center", gap: 8,
@@ -637,10 +718,12 @@ const styles = {
     color: "#475569", marginTop: 4, marginBottom: 2,
     display: "flex", alignItems: "center", gap: 6,
   },
+  
   sidebarNode: {
     display: "flex", alignItems: "center", gap: 10,
     padding: "10px 12px", borderRadius: 10, border: "1px solid",
     cursor: "grab", transition: "all 0.18s ease", userSelect: "none",
+    flexShrink: 0,
   },
   nodeIcon:  { fontSize: 16, flexShrink: 0 },
   nodeLabel: { fontSize: 13, fontWeight: 600, transition: "color 0.15s" },
@@ -717,4 +800,26 @@ const styles = {
     position: "absolute", top: 0, right: 0,
     zIndex: 1000, height: "100%",
   },
+
+  runTopBtn: {
+    padding: "5px 14px", borderRadius: 8, border: "none",
+    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+    color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer",
+    letterSpacing: "0.03em", boxShadow: "0 2px 10px rgba(99,102,241,0.35)",
+  },
+  nodesHeaderRow: {
+    display: "flex", alignItems: "center",
+    justifyContent: "space-between", gap: 8,
+  },
+  nodeSearch: {
+    flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 7,
+    border: "1px solid #1e293b", background: "#0f172a",
+    color: "#e2e8f0", fontSize: 11, outline: "none",
+    fontFamily: "inherit", boxSizing: "border-box",
+  },
+  nodeList: {
+    flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
+    display: "flex", flexDirection: "column", gap: 8, paddingRight: 4,
+  },
+  nodeEmpty: { color: "#475569", fontSize: 11, textAlign: "center", marginTop: 12 },
 };
