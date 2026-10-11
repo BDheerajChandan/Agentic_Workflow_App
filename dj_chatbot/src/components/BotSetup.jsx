@@ -123,6 +123,7 @@ export default function BotSetup() {
               <div className="bot-card-actions">
                 <button
                   className="btn btn-ghost btn-sm"
+                  style={{ color: "black" , background: "linear-gradient(135deg, #4f46e5, #7c3aed)",}}
                   onClick={(e) => {
                     e.stopPropagation();
                     setFormState({ mode: "edit", bot: b });

@@ -148,19 +148,20 @@ a.btn { text-decoration: none; display: inline-block; }
   gap: 16px;
   margin-top: 6px;
 }
+/* background: "#c7da7e",  background: #020617;*/
 .bot-card {
   display: flex; flex-direction: column; gap: 5px;
   padding: 5px; border: 1px solid #1e293b; border-radius: 12px;
-  background: #0f172a; cursor: pointer; transition: border-color 0.2s;
+  background: #c7da7e; cursor: pointer; transition: border-color 0.2s;
   min-width: 0;
 }
 .bot-card:hover { border-color: #6366f1; }
 .bot-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.bot-name { font-size: 14px; font-weight: 700; word-break: break-word; }
+.bot-name { color: #020617; font-size: 14px; font-weight: 700; word-break: break-word; }
 
 .icon-btn {
   flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
-  border: 1px solid #1e293b; background: transparent; color: #94a3b8;
+  border: 1px solid #1e293b; color: #94a3b8;
   cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;
   transition: all 0.15s;
 }
@@ -168,7 +169,8 @@ a.btn { text-decoration: none; display: inline-block; }
 
 .bot-tag {
   padding: 10px 12px; border-radius: 8px;
-  background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.2);
+  background: #020617;;
+  border: 1px solid rgba(99,102,241,0.2);
 }
 .bot-tag-label { font-size: 10px; color: #818cf8; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
 .bot-tag-name { font-size: 13px; font-weight: 700; margin-bottom: 8px; word-break: break-word; }

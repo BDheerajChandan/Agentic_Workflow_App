@@ -17,6 +17,17 @@ def rag_retrieve_node(state, config):
     chunk_overlap: int   = int(config.get("chunk_overlap", 100))
     k: int               = int(config.get("k", 5))
 
+    # ── Static / Dynamic configuration mode ──────────────────────────────────
+    config_mode: str = str(config.get("config_mode", "static")).strip().lower()
+    api_key = None
+    if config_mode == "dynamic":
+        api_key = str(config.get("api_key", "")).strip()
+        if not api_key:
+            raise ValueError(
+                "RAG Retrieve node is in Dynamic mode but no API key was provided. "
+                "Enter an API key in the node's Settings panel or switch to Static."
+            )
+
     if not source:
         raise ValueError(
             "RAG Retrieve node has no source configured. "
@@ -31,6 +42,7 @@ def rag_retrieve_node(state, config):
     print(f"📂 Source        : {source}")
     print(f"🔖 Source type   : {source_type or 'auto'}")
     print(f"📐 Chunk size    : {chunk_size}  |  Overlap: {chunk_overlap}  |  k: {k}")
+    print(f"🔑 Config mode   : {config_mode}")
 
     docs, scores = dynamic_retrieve(
         query=question,
@@ -40,6 +52,7 @@ def rag_retrieve_node(state, config):
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         k=k,
+        api_key=api_key,
     )
 
     avg_confidence = round(sum(scores) / len(scores), 2) if scores else 0

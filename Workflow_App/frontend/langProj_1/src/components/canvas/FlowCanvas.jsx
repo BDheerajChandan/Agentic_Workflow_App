@@ -12,10 +12,13 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-import { nodeTypes } from "../register_nodes";
 import { runGraphStream, saveFlow, getFlowByRoute } from "../../services/api";
 import PlaygroundPanel from "../playground/PlaygroundPanel";
-import SettingsPanel from "../nodes/SettingsPanel";
+
+// import { nodeTypes } from "../register_nodes";
+// import SettingsPanel from "../nodes/SettingsPanel";
+import { nodeTypes } from "../../registry/node_registration";
+import SettingsPanel from "../../registry/SettingsPanel";
 
 let _id = 1;
 const getNodeId = () => `node_${_id++}`;

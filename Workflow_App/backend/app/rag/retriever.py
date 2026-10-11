@@ -4,6 +4,7 @@ Dynamic document retrieval pipeline.
 - OpenAI embeddings are initialised lazily (only when retrieve() is called).
 - Supports local files, multiple files, folders, and non-local sources.
 - Source type is determined at runtime from node config.
+- API key: Static mode -> .env (OPENAI_API_KEY); Dynamic mode -> key passed from node config.
 """
 
 from __future__ import annotations
@@ -26,23 +27,27 @@ SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt", ".html", ".htm", ".md"
 
 # ─── Lazy embeddings ──────────────────────────────────────────────────────────
 
-def _get_embeddings():
-    """Return OpenAI embeddings instance. Raises with a clear message on failure."""
+def _get_embeddings(api_key: str | None = None):
+    """
+    Return OpenAI embeddings instance. Raises with a clear message on failure.
+    If api_key is provided (Dynamic mode) it is used; otherwise falls back to .env (Static mode).
+    """
     from langchain_openai import OpenAIEmbeddings
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
+    key = (api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+    if not key:
         raise RuntimeError(
-            "OPENAI_API_KEY is not set. Please add it to your .env file."
+            "OPENAI_API_KEY is not set. Please add it to your .env file "
+            "or provide an API key in the node's Dynamic settings."
         )
-    return OpenAIEmbeddings(api_key=api_key)
+    return OpenAIEmbeddings(api_key=key)
 
 
-def _get_vectorstore(collection_name: str):
+def _get_vectorstore(collection_name: str, api_key: str | None = None):
     from langchain_chroma import Chroma
     return Chroma(
         persist_directory=str(CHROMA_DIR),
         collection_name=collection_name,
-        embedding_function=_get_embeddings(),
+        embedding_function=_get_embeddings(api_key),
     )
 
 
@@ -239,6 +244,7 @@ def retrieve(
     chunk_size: int = 500,
     chunk_overlap: int = 100,
     k: int = 5,
+    api_key: str | None = None,          # None -> .env (Static) | str -> Dynamic
 ) -> tuple[list[Document], list[float]]:
     """
     Full pipeline:
@@ -259,7 +265,7 @@ def retrieve(
     print(f"📦 {len(chunks)} chunks from {len(raw_docs)} document(s)")
 
     safe_name = "".join(c if c.isalnum() else "_" for c in (source or "default"))[:60]
-    vs = _get_vectorstore(safe_name)
+    vs = _get_vectorstore(safe_name, api_key)
     vs.add_documents(chunks)
 
     results = vs.similarity_search_with_score(query, k=k)
