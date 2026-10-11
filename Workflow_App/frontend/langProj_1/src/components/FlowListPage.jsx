@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { listFlows, deleteFlow } from "../services/api";
+import CreateBotModal from "./CreateBotModal";
 
 const TOPBAR_HEIGHT = 42;
 
@@ -10,6 +11,9 @@ export default function FlowListPage({ onOpen, onNew }) {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+
+  const [botTarget,  setBotTarget]  = useState(null); // { id, name } of the workflow
+  const [createdBot, setCreatedBot] = useState(null);
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
@@ -33,7 +37,7 @@ export default function FlowListPage({ onOpen, onNew }) {
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this flow?")) return;
+    if (!window.confirm("Delete this flow? Bots tagged to it will also be deleted.")) return;
     await deleteFlow(id);
     load();
   };
@@ -58,10 +62,43 @@ export default function FlowListPage({ onOpen, onNew }) {
       </div>
 
       <div style={styles.content}>
-        <div style={styles.headingRow}>
+        {/* <div style={styles.headingRow}>
           <div style={styles.heading}>My Flows</div>
           <button style={styles.newBtn} onClick={onNew}>＋ Create New Flow</button>
+        </div> */}
+        <div style={styles.headingRow}>
+          <div style={styles.heading}>My Flows</div>
+          <div style={styles.headingActions}>
+            <a
+              style={styles.chatbotBtn}
+              href="http://localhost:5174/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              🤖 Open Chatbot App
+            </a>
+            <button style={styles.newBtn} onClick={onNew}>＋ Create New Flow</button>
+          </div>
         </div>
+
+        {createdBot && (
+          <div style={styles.successBox}>
+            <span>
+              ✓ Bot “{createdBot.name}” created and tagged to “{createdBot.workflow_name}”.
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <a
+                href={createdBot.bot_url}
+                target="_blank"
+                rel="noreferrer"
+                style={styles.successOpenBtn}
+              >
+                Open Bot →
+              </a>
+              <button style={styles.successClose} onClick={() => setCreatedBot(null)}>✕</button>
+            </div>
+          </div>
+        )}
 
         {loading && <div style={styles.muted}>Loading…</div>}
         {error   && <div style={styles.errStyle}>{error}</div>}
@@ -99,11 +136,35 @@ export default function FlowListPage({ onOpen, onNew }) {
                 <MetaRow label="Updated"    value={fmt(f.updated_at)} />
               </div>
 
-              <div style={styles.openHint}>Click to open →</div>
+              <div style={styles.cardFooter}>
+                <button
+                  style={styles.botBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setBotTarget({ id: f.id, name: f.name });
+                  }}
+                  title="Create a Bot tagged to this workflow"
+                >
+                  🤖 Create Bot
+                </button>
+                <div style={styles.openHint}>Click to open →</div>
+              </div>
             </div>
           ))}
         </div>
       </div>
+
+      {botTarget && (
+        <CreateBotModal
+          flowId={botTarget.id}
+          flowName={botTarget.name}
+          onClose={() => setBotTarget(null)}
+          onCreated={(bot) => {
+            setBotTarget(null);
+            setCreatedBot(bot);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -160,6 +221,18 @@ const styles = {
 
   heading: { fontSize: 22, fontWeight: 700, color: "#e2e8f0" },
 
+  headingActions: {
+    display: "flex", alignItems: "center", gap: 10,
+  },
+
+  chatbotBtn: {
+    padding: "8px 18px", borderRadius: 9,
+    border: "1px solid #334155", background: "transparent",
+    color: "#94a3b8", fontWeight: 700, fontSize: 13,
+    cursor: "pointer", letterSpacing: "0.04em",
+    textDecoration: "none", display: "inline-block",
+  },
+
   newBtn: {
     padding: "8px 18px", borderRadius: 9, border: "none",
     background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
@@ -180,6 +253,9 @@ const styles = {
     padding: "18px 20px",
     cursor: "pointer",
     transition: "border-color 0.2s",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
   },
 
   cardHeader: {
@@ -200,10 +276,48 @@ const styles = {
     background: "#020617", borderRadius: 8, border: "1px solid #1e293b",
   },
 
+  cardFooter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: 4,
+    paddingTop: 10,
+    borderTop: "1px solid rgba(2,6,23,0.15)",
+  },
+
+  botBtn: {
+    padding: "6px 14px",
+    borderRadius: 8,
+    border: "none",
+    background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+    color: "white",
+    fontWeight: 700,
+    fontSize: 11,
+    cursor: "pointer",
+    letterSpacing: "0.03em",
+    flexShrink: 0,
+  },
+
   openHint: {
     fontSize: 11, color: "#4801ee",
     textAlign: "right", letterSpacing: "0.04em",
   },
+
+  successBox: {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    marginBottom: 20, padding: "10px 14px", borderRadius: 10, fontSize: 12,
+    background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)",
+    color: "#6ee7b7",
+  },
+  successOpenBtn: {
+    padding: "6px 14px", borderRadius: 8, border: "none",
+    background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+    color: "white", fontWeight: 700, fontSize: 11,
+    cursor: "pointer", letterSpacing: "0.03em", textDecoration: "none",
+    flexShrink: 0,
+  },
+  successClose: { background: "transparent", border: "none", color: "#6ee7b7", cursor: "pointer", fontSize: 13 },
 
   emptyBox: {
     display: "flex", flexDirection: "column",

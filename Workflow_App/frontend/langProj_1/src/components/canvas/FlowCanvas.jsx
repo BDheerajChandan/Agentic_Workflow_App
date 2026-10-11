@@ -341,25 +341,14 @@ function FlowCanvas({ routeSlug, onBack }) {
             🧪 Playground
           </button>
           {/* <button
-            style={{ ...styles.saveBtn, ...(saving ? styles.saveBtnDisabled : {}) }}
-            onClick={handleSave}
-            disabled={saving}
+            style={styles.playgroundTopBtn}
+            onClick={() => setBotModalOpen(true)}
+          > */}
+          {/* <button
+            style={{ ...styles.playgroundTopBtn, borderColor: "#334155", color: "#94a3b8" }}
+            onClick={() => setBotModalOpen(true)}
           >
-            {saving ? "Saving…" : "💾 Save"}
-          </button>
-
-          <button
-            style={{
-              ...styles.playgroundTopBtn,
-              borderColor: playgroundOpen ? "#6366f1" : "#334155",
-              color:       playgroundOpen ? "#818cf8" : "#94a3b8",
-            }}
-            onClick={() => {
-              setPlaygroundOpen(!playgroundOpen);
-              if (!playgroundOpen) { setSettingsOpen(false); setOutputOpen(false); }
-            }}
-          >
-            🧪 Playground
+            🤖 Create Bot
           </button> */}
         </div>
 

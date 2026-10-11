@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers.graph_router import router as graph_router
 from app.routers.flow_router import router as flow_router
 from app.routers.local_files_router import router as local_files_router
+from app.routers.bot_router import router as bot_router
 from app import db
 
 
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(graph_router, prefix="/graph")
 app.include_router(flow_router)
 app.include_router(local_files_router)
+app.include_router(bot_router)
 
 
 @app.get("/")

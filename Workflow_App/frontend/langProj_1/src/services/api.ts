@@ -142,3 +142,53 @@ export interface Execution {
   result: any;
   executed_at: string;
 }
+
+// ─── Bots ─────────────────────────────────────────────────────────────────────
+
+export interface Bot {
+  bot_id: string;
+  name: string;
+  flow_id: number;
+  workflow_name: string;
+  workflow_url: string;
+  workflow_endpoint: string;
+  bot_endpoint: string;
+  bot_url: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  last_chat_at: string | null;
+}
+
+export interface BotWorkflow {
+  workflow_id: number;
+  workflow_name: string;
+  route_slug: string;
+  workflow_url: string;
+  workflow_endpoint: string;
+}
+
+export const listBotWorkflows = async () => {
+  const res = await axios.get(`${BASE_URL}/bots/workflows`);
+  return res.data as { workflows: BotWorkflow[] };
+};
+
+export const createBot = async (name: string, flow_id: number) => {
+  const res = await axios.post(`${BASE_URL}/bots`, { name, flow_id });
+  return res.data as Bot;
+};
+
+export const listBots = async () => {
+  const res = await axios.get(`${BASE_URL}/bots`);
+  return res.data as { bots: Bot[] };
+};
+
+export const renameBot = async (botId: string, name: string) => {
+  const res = await axios.patch(`${BASE_URL}/bots/${botId}/rename`, { name });
+  return res.data as Bot;
+};
+
+export const deleteBot = async (botId: string) => {
+  const res = await axios.delete(`${BASE_URL}/bots/${botId}`);
+  return res.data;
+};

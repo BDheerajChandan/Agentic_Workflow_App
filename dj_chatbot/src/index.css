@@ -38,7 +38,7 @@ body {
 .btn-block { width: 100%; }
 
 /* ── Bot setup ───────────────────────────────────────────── */
-.setup-root { width: 100%; height: 100%; overflow-y: auto; display: flex; justify-content: center; padding: 40px 16px; }
+.setup-root { width: 100%; height: 100%; overflow-y: auto; display: flex; justify-content: center; padding: 10px 6px; }
 .setup-card { width: 100%; max-width: 620px; height: fit-content; background: #0a0f1e; border: 1px solid #1e293b; border-radius: 14px; padding: 28px; }
 .setup-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
 .setup-title { font-size: 22px; color: #818cf8; margin-bottom: 4px; }
@@ -55,7 +55,6 @@ body {
 }
 .bot-item-active { border-color: #6366f1; }
 .bot-info { min-width: 0; }
-.bot-name { font-size: 13px; font-weight: 700; }
 .bot-url { font-size: 11px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bot-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
@@ -102,3 +101,112 @@ body {
 }
 .input-box:focus { border-color: #6366f1; }
 .send-btn { min-width: 90px; }
+
+/* ── Top bar / root layout ───────────────────────────────── */
+.app-root { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.app-main { flex: 1; min-height: 0; position: relative; }
+.app-main > .app-shell,
+.app-main > .setup-root { height: 100%; }
+
+.topbar {
+  height: 42px; flex-shrink: 0; background: #0f172a; border-bottom: 1px solid #1e293b;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-back { flex-shrink: 0; }
+.topbar-brand { color: #818cf8; font-weight: 700; font-size: 14px; }
+.topbar-center { color: #38bdf8; font-size: 13px; }
+.topbar-right { color: #e9e9f3; font-weight: 600; font-size: 12px; }
+
+/* ── Date / time additions ───────────────────────────────── */
+.session-date {
+  font-size: 10px; color: #475569; text-transform: uppercase;
+  letter-spacing: 0.1em; margin: 6px 0 2px;
+}
+.date-sep {
+  align-self: center; font-size: 10px; color: #64748b; padding: 3px 10px;
+  border: 1px solid #1e293b; border-radius: 999px; letter-spacing: 0.06em;
+}
+.bubble-time { font-size: 10px; opacity: 0.55; margin-top: 4px; text-align: right; }
+a.btn { text-decoration: none; display: inline-block; }
+
+/* ── My Bots: header actions ─────────────────────────────── */
+.setup-head-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ── My Bots cards ───────────────────────────────────────── */
+.setup-card-wide {
+  max-width: 1300px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+.bot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 6px;
+}
+.bot-card {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 5px; border: 1px solid #1e293b; border-radius: 12px;
+  background: #0f172a; cursor: pointer; transition: border-color 0.2s;
+  min-width: 0;
+}
+.bot-card:hover { border-color: #6366f1; }
+.bot-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.bot-name { font-size: 14px; font-weight: 700; word-break: break-word; }
+
+.icon-btn {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
+  border: 1px solid #1e293b; background: transparent; color: #94a3b8;
+  cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.icon-btn:hover { border-color: #6366f1; color: #818cf8; }
+
+.bot-tag {
+  padding: 10px 12px; border-radius: 8px;
+  background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.2);
+}
+.bot-tag-label { font-size: 10px; color: #818cf8; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+.bot-tag-name { font-size: 13px; font-weight: 700; margin-bottom: 8px; word-break: break-word; }
+
+.bot-card-meta { padding: 10px 12px; border-radius: 8px; background: #020617; border: 1px solid #1e293b; }
+.meta-row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px; min-width: 0; }
+.meta-label { color: #475569; font-size: 11px; flex-shrink: 0; }
+.meta-value { color: #94a3b8; font-size: 11px; }
+.meta-link { color: #38bdf8; font-size: 11px; text-decoration: none; }
+.meta-link:hover { text-decoration: underline; }
+.meta-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.bot-card-actions { display: flex; gap: 8px; }
+.bot-card-actions .btn { flex: 1; }
+
+/* ── Generic modal (Create / Edit Bot) ───────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(2,6,23,0.75);
+  display: flex; align-items: center; justify-content: center; z-index: 4000;
+}
+.modal-panel {
+  width: 400px; max-width: calc(100vw - 32px);
+  background: #0a0f1e; border: 1px solid #1e293b;
+  border-radius: 14px; padding: 22px; color: #e2e8f0;
+  font-family: inherit; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.modal-title { font-size: 16px; font-weight: 700; color: #818cf8; }
+.modal-close { background: transparent; border: none; color: #475569; font-size: 14px; cursor: pointer; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ── Native select styled like .inp ──────────────────────── */
+.select-wrap { position: relative; width: 100%; }
+.select-native {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  padding-right: 30px; cursor: pointer;
+}
+.select-arrow {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  color: #475569; font-size: 10px; pointer-events: none;
+}
