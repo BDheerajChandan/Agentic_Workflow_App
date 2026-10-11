@@ -1,0 +1,14 @@
+venv
+docs
+Chroma_db
+*.pyc
+.env
+
+*.txt
+*.pdf
+*.pptx
+*.doc
+*.docx
+*.csv
+*.rtf
+*.odt
