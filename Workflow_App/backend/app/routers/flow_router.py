@@ -89,6 +89,32 @@ async def get_executions(flow_id: int):
     return {"executions": execs}
 
 
+@router.delete("/{flow_id}/runs/{run_id}")
+async def delete_run(flow_id: int, run_id: int):
+    if not await db.delete_run(flow_id, run_id):
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return {"message": "Run deleted."}
+
+
+@router.delete("/{flow_id}/runs")
+async def delete_all_runs(flow_id: int):
+    deleted = await db.delete_all_runs(flow_id)
+    return {"message": "Run history cleared.", "deleted": deleted}
+
+
+@router.get("/{flow_id}/runs")
+async def list_runs(flow_id: int):
+    return {"runs": await db.list_runs(flow_id)}
+
+
+@router.get("/{flow_id}/runs/{run_id}")
+async def get_run(flow_id: int, run_id: int):
+    run = await db.get_run(flow_id, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return run
+
+
 @router.delete("/{flow_id}")
 async def delete_flow(flow_id: int):
     pool = await db.get_pool()

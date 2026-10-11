@@ -16,7 +16,7 @@ export default function SettingsPanel({
   flowId,
   variablesVersion,
 }) {
-  const { getNode, setNodes } = useReactFlow();
+    const { getNode, getNodes, setNodes } = useReactFlow();
 
   const [localData, setLocalData] = useState({});
 
@@ -75,6 +75,9 @@ export default function SettingsPanel({
             selectedNodeId={selectedNodeId}
             globalInput={globalInput}
             onGlobalInputChange={onGlobalInputChange}
+            flowId={flowId}
+            variablesVersion={variablesVersion}
+            workflowNodes={getNodes()}
           />
         ) : (
           <div style={infoStyle}>
@@ -85,6 +88,7 @@ export default function SettingsPanel({
         {variableCapableNodes.has(node.type) && (
           <VariableSection
             key={`${selectedNodeId}-var`}
+            nodeType={node.type}
             localData={localData}
             patch={patch}
             flowId={flowId}

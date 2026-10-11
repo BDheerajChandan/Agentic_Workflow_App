@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app import db
+from app.nodes.io_schema import public_node_io
 from app.variables import VariableError
 
 router = APIRouter(prefix="/variables", tags=["variables"])
@@ -27,6 +28,10 @@ class UpdateVariableRequest(BaseModel):
 
 def _http(exc: VariableError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.message)
+
+@router.get("/node-io")
+async def node_io():
+    return public_node_io()
 
 
 @router.get("")

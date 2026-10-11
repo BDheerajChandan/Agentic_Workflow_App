@@ -17,17 +17,3 @@ NODE_REGISTRY = {
     "rag_retrieve": rag_retrieve_node,
     "rag_generate": rag_generate_node,
 }
-
-
-# ─── Variable "Node Output" resolvers ─────────────────────────────────────────
-# Optional per-node override of what "Node Output" means for variable assignment.
-# Nodes without an entry fall back to the generic rule in graph/builder.py.
-
-def _rag_retrieve_output(result: dict):
-    docs = result.get("docs") or []
-    return "\n\n".join(d.page_content for d in docs)
-
-
-NODE_OUTPUT_RESOLVERS = {
-    "rag_retrieve": _rag_retrieve_output,
-}

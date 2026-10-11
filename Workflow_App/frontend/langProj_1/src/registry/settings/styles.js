@@ -126,3 +126,9 @@ export const checkRow = {
   display: "flex", alignItems: "center", gap: 8,
   fontSize: 12, color: "#cbd5e1", cursor: "pointer",
 };
+
+
+export const mappingBox = {
+  marginTop: 12, padding: 10,
+  border: "1px solid #1e293b", borderRadius: 8,
+};

@@ -249,3 +249,64 @@ export const deleteVariable = async (variableId: number) => {
   const res = await axios.delete(`${BASE_URL}/variables/${variableId}`);
   return res.data;
 };
+
+
+// ─── Node input / output definitions (for variable mapping) ──────────────────
+
+export interface NodeIOField {
+  key: string;
+  label: string;
+}
+
+export interface NodeIODef {
+  inputs: NodeIOField[];
+  outputs: NodeIOField[];
+}
+
+export const getNodeIO = async () => {
+  const res = await axios.get(`${BASE_URL}/variables/node-io`);
+  return res.data as { nodes: Record<string, NodeIODef>; default: NodeIODef };
+};
+
+
+
+// ─── Run history ──────────────────────────────────────────────────────────────
+
+export interface RunSummary {
+  run_id: number;
+  flow_id: number;
+  workflow_name: string;
+  status: "passed" | "failed";
+  started_at: string;
+  ended_at: string;
+  duration_ms: number;
+  error: string | null;
+}
+
+export interface RunDetail extends RunSummary {
+  input: string | null;
+  result: any;
+  node_states: any[];
+  variables: Record<string, any>;
+}
+
+export const listRuns = async (flowId: number) => {
+  const res = await axios.get(`${BASE_URL}/flows/${flowId}/runs`);
+  return res.data as { runs: RunSummary[] };
+};
+
+export const getRun = async (flowId: number, runId: number) => {
+  const res = await axios.get(`${BASE_URL}/flows/${flowId}/runs/${runId}`);
+  return res.data as RunDetail;
+};
+
+
+export const deleteRun = async (flowId: number, runId: number) => {
+  const res = await axios.delete(`${BASE_URL}/flows/${flowId}/runs/${runId}`);
+  return res.data;
+};
+
+export const deleteAllRuns = async (flowId: number) => {
+  const res = await axios.delete(`${BASE_URL}/flows/${flowId}/runs`);
+  return res.data as { message: string; deleted: number };
+};

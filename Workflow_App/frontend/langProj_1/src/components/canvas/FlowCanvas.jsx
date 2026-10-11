@@ -20,6 +20,9 @@ import CreateVariableModal from "../CreateVariableModal";
 // import SettingsPanel from "../nodes/SettingsPanel";
 import { nodeTypes } from "../../registry/node_registration";
 import SettingsPanel from "../../registry/SettingsPanel";
+import NodeStatesModal from "../NodeStatesModal";
+import RunHistoryModal from "../RunHistoryModal";
+import { buildOutputDisplay } from "../../utils/outputDisplay";
 
 let _id = 1;
 const getNodeId = () => `node_${_id++}`;
@@ -75,6 +78,26 @@ function FlowCanvas({ routeSlug, onBack }) {
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [nodeSearch, setNodeSearch] = useState("");
   const [variableModalOpen, setVariableModalOpen] = useState(false);
+  const [nodeTraces, setNodeTraces] = useState([]);
+  const [statesOpen, setStatesOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const playgroundRef = useRef(null);
+  useEffect(() => {
+    if (!playgroundOpen) return undefined;
+    const handler = (e) => {
+      if (playgroundRef.current?.contains(e.target)) return;
+      if (e.target.closest?.("[data-playground-toggle]")) return;
+      setPlaygroundOpen(false);
+    };
+    document.addEventListener("mousedown", handler, true);
+    document.addEventListener("touchstart", handler, true);
+    return () => {
+      document.removeEventListener("mousedown", handler, true);
+      document.removeEventListener("touchstart", handler, true);
+    };
+  }, [playgroundOpen]);
+
   const [variablesVersion,  setVariablesVersion]  = useState(0);
 
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
@@ -191,6 +214,8 @@ function FlowCanvas({ routeSlug, onBack }) {
     setSettingsOpen(false);
     setRunningNodeId(null);
     setCompletedNodeIds(new Set());
+    setNodeTraces([]);
+    const traces = [];
     try {
       const result = await runGraphStream(
         { nodes, edges, input, flow_id: flowId },
@@ -201,11 +226,21 @@ function FlowCanvas({ routeSlug, onBack }) {
             } else if (evt.status === "done") {
               setRunningNodeId((prev) => (prev === evt.node_id ? null : prev));
               setCompletedNodeIds((prev) => new Set(prev).add(evt.node_id));
+            } else if (evt.status === "trace" && evt.detail) {
+              setNodeTraces((prev) => [...prev, evt.detail]);
+              traces.push(evt.detail);
             }
           }
         }
       );
-      setOutput(result?.result ?? result);
+      setOutput(
+        await buildOutputDisplay({
+          nodes,
+          flowId,
+          result: result?.result ?? result,
+          traces,
+        })
+      );
     } catch (err) {
       setError(err?.message || "Execution failed");
     } finally {
@@ -304,12 +339,12 @@ function FlowCanvas({ routeSlug, onBack }) {
 
       <div style={styles.topBar}>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <button style={styles.backBtn} onClick={onBack}>← Back</button>
           <span style={styles.topBarLeft}>🚀 LangGraph Workflow Builder</span>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           <input
             value={flowName}
             onChange={(e) => setFlowName(e.target.value)}
@@ -339,12 +374,20 @@ function FlowCanvas({ routeSlug, onBack }) {
               borderColor: playgroundOpen ? "#6366f1" : "#334155",
               color:       playgroundOpen ? "#818cf8" : "#94a3b8",
             }}
+                        data-playground-toggle="true"
             onClick={() => {
               setPlaygroundOpen(!playgroundOpen);
               if (!playgroundOpen) { setSettingsOpen(false); setOutputOpen(false); }
             }}
           >
             🧪 Playground
+          </button>
+
+          <button
+            style={{ ...styles.playgroundTopBtn, borderColor: "#334155", color: "#94a3b8" }}
+            onClick={() => setHistoryOpen(true)}
+          >
+            🕘 Run History
           </button>
           
         </div>
@@ -469,6 +512,12 @@ function FlowCanvas({ routeSlug, onBack }) {
               </div>
             </div>
 
+                        {(nodeTraces.length > 0 || error) && (
+              <button style={styles.statesBtn} onClick={() => setStatesOpen(true)}>
+                🔍 View Node States
+              </button>
+            )}
+
             {error && (
               <div style={styles.errorBox}>
                 <span style={styles.errorIcon}>⚠</span>
@@ -484,14 +533,16 @@ function FlowCanvas({ routeSlug, onBack }) {
           </aside>
         )}
 
-        {playgroundOpen && (
-          <div style={styles.playgroundWrapper}>
+                {playgroundOpen && (
+          <div ref={playgroundRef} style={styles.playgroundWrapper}>
             <PlaygroundPanel
               output={output}
               loading={running}
+              onClose={() => setPlaygroundOpen(false)}
               onSend={async (message) => {
                 setRunningNodeId(null);
                 setCompletedNodeIds(new Set());
+                const traces = [];
                 const result = await runGraphStream(
                   { nodes, edges, input: message, flow_id: flowId },
                   (evt) => {
@@ -500,17 +551,41 @@ function FlowCanvas({ routeSlug, onBack }) {
                       else if (evt.status === "done") {
                         setRunningNodeId((prev) => (prev === evt.node_id ? null : prev));
                         setCompletedNodeIds((prev) => new Set(prev).add(evt.node_id));
+                      } else if (evt.status === "trace" && evt.detail) {
+                        traces.push(evt.detail);
                       }
                     }
                   }
                 );
                 setRunningNodeId(null);
-                return result?.result ?? result;
+                return buildOutputDisplay({
+                  nodes,
+                  flowId,
+                  result: result?.result ?? result,
+                  traces,
+                });
               }}
             />
           </div>
         )}
+
       </div>
+
+      {historyOpen && (
+        <RunHistoryModal
+          flowId={flowId}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
+      {statesOpen && (
+        <NodeStatesModal
+          traces={nodeTraces}
+          nodes={nodes}
+          error={error}
+          onClose={() => setStatesOpen(false)}
+        />
+      )}
 
       {variableModalOpen && (
         <CreateVariableModal
@@ -610,10 +685,10 @@ const styles = {
     borderBottom: "1px solid #1e293b",
     display: "flex", alignItems: "center",
     justifyContent: "space-between",
-    padding: "0 16px",
+    padding: "0 12px",
     zIndex: 3000,
     color: "#e2e8f0", fontSize: 13, fontWeight: 600,
-    gap: 12, flexShrink: 0,
+    gap: 8, flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden",
   },
 
   body: {
@@ -625,22 +700,22 @@ const styles = {
   },
 
   backBtn: {
-    padding: "5px 12px", borderRadius: 8,
+    padding: "5px 10px", borderRadius: 8, whiteSpace: "nowrap", flexShrink: 0,
     border: "1px solid #334155", background: "transparent",
     color: "#94a3b8", fontSize: 12, cursor: "pointer", fontWeight: 600,
   },
-  topBarLeft:   { color: "#818cf8", letterSpacing: "0.04em" },
-  topBarCenter: { color: "#38bdf8", fontSize: 13 },
-  topBarRight:  { color: "#94a3b8", fontSize: 12 },
+  topBarLeft:   { color: "#818cf8", letterSpacing: "0.02em", fontSize: 12, whiteSpace: "nowrap" },
+  topBarCenter: { color: "#38bdf8", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 },
+  topBarRight:  { color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 },
 
   flowNameInput: {
     padding: "4px 10px", borderRadius: 7,
     border: "1px solid #334155", background: "#0f172a",
     color: "#e2e8f0", fontSize: 13, fontWeight: 700,
-    outline: "none", width: 200, fontFamily: "inherit",
+    outline: "none", width: 130, minWidth: 0, fontFamily: "inherit",
   },
   saveBtn: {
-    padding: "5px 14px", borderRadius: 8, border: "none",
+    padding: "5px 10px", borderRadius: 8, border: "none", whiteSpace: "nowrap",
     background: "linear-gradient(135deg, #059669, #065f46)",
     color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer",
   },
@@ -648,7 +723,7 @@ const styles = {
   saveMsg: { fontSize: 12, color: "#34d399", fontWeight: 600 },
 
   playgroundTopBtn: {
-    padding: "5px 14px", borderRadius: 8,
+    padding: "5px 10px", borderRadius: 8, whiteSpace: "nowrap",
     border: "1px solid", background: "transparent",
     fontSize: 12, fontWeight: 600, cursor: "pointer",
     transition: "all 0.15s", letterSpacing: "0.03em",
@@ -706,6 +781,12 @@ const styles = {
     width: "100%", padding: "9px 0", borderRadius: 10,
     border: "1px solid #1e293b", background: "transparent",
     color: "#64748b", fontSize: 12, cursor: "pointer", letterSpacing: "0.04em",
+  },
+  statesBtn: {
+    width: "100%", padding: "8px 0", borderRadius: 10,
+    border: "1px solid #6366f1", background: "rgba(99,102,241,0.08)",
+    color: "#818cf8", fontSize: 12, fontWeight: 600,
+    cursor: "pointer", letterSpacing: "0.04em",
   },
   variableBtn: {
     width: "100%", padding: "9px 0", borderRadius: 10,
@@ -771,7 +852,7 @@ const styles = {
   },
 
   runTopBtn: {
-    padding: "5px 14px", borderRadius: 8, border: "none",
+    padding: "5px 10px", borderRadius: 8, border: "none", whiteSpace: "nowrap",
     background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
     color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer",
     letterSpacing: "0.03em", boxShadow: "0 2px 10px rgba(99,102,241,0.35)",

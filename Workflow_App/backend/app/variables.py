@@ -7,7 +7,8 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-MODES = ("assign", "read")
+from app.nodes.io_schema import get_node_io
+
 SOURCES = ("node_output", "static")
 
 
@@ -18,34 +19,94 @@ class VariableError(Exception):
         self.status_code = status_code
 
 
-def parse_variable_config(node_data: dict | None) -> dict | None:
-    """Return a normalised variable config for a node, or None when disabled."""
+def _upgrade_legacy(cfg: dict, io: dict) -> dict:
+    """Convert the old {mode, variable_id, source, static_value} shape to mappings."""
+    mode = str(cfg.get("mode") or "").strip().lower()
+    if mode == "read":
+        return {
+            "input_mapping": {
+                "enabled": True,
+                "variable_id": cfg.get("variable_id"),
+                "target": io["inputs"][0]["key"],
+            }
+        }
+    if mode == "assign":
+        return {
+            "output_mapping": {
+                "enabled": True,
+                "variable_id": cfg.get("variable_id"),
+                "source": cfg.get("source") or "node_output",
+                "output": io["outputs"][0]["key"],
+                "static_value": cfg.get("static_value"),
+            }
+        }
+    raise VariableError("Variable mode must be 'assign' or 'read'.")
+
+
+def _variable_id(mapping: dict, label: str) -> int:
+    try:
+        return int(mapping.get("variable_id"))
+    except (TypeError, ValueError):
+        raise VariableError(f"{label}: no variable selected.")
+
+
+def _parse_input(mapping: dict, io: dict) -> dict:
+    label = "Input Value Mapping"
+    variable_id = _variable_id(mapping, label)
+    target = str(mapping.get("target") or "").strip()
+    if not target:
+        raise VariableError(f"{label}: select a target input.")
+    if not any(i["key"] == target for i in io["inputs"]):
+        raise VariableError(f"{label}: input '{target}' does not exist on this node.")
+    return {"variable_id": variable_id, "target": target}
+
+
+def _parse_output(mapping: dict, io: dict) -> dict:
+    label = "Output Value Mapping"
+    variable_id = _variable_id(mapping, label)
+    source = str(mapping.get("source") or "node_output").strip().lower()
+    if source not in SOURCES:
+        raise VariableError(f"{label}: source must be 'Node Output' or 'Static Value'.")
+
+    parsed: dict[str, Any] = {"variable_id": variable_id, "source": source}
+    if source == "static":
+        value = mapping.get("static_value")
+        if value is None or value == "":
+            raise VariableError(f"{label}: Static Value source requires a value.")
+        parsed["static_value"] = value
+    else:
+        output = str(mapping.get("output") or "").strip()
+        if not output:
+            raise VariableError(f"{label}: select a source output.")
+        if not any(o["key"] == output for o in io["outputs"]):
+            raise VariableError(f"{label}: output '{output}' does not exist on this node.")
+        parsed["output"] = output
+    return parsed
+
+
+def parse_variable_config(node_data: dict | None, node_type: str | None = None) -> dict | None:
+    """
+    Returns {"input": {...}|None, "output": {...}|None} for a node, or None when
+    variables are disabled / no mapping is enabled.
+    """
     cfg = (node_data or {}).get("variable")
     if not isinstance(cfg, dict) or not cfg.get("enabled"):
         return None
 
-    mode = str(cfg.get("mode") or "").strip().lower()
-    if mode not in MODES:
-        raise VariableError("Variable mode must be 'assign' or 'read'.")
+    io = get_node_io(node_type)
 
-    try:
-        variable_id = int(cfg.get("variable_id"))
-    except (TypeError, ValueError):
-        raise VariableError("No variable selected.")
+    if "input_mapping" not in cfg and "output_mapping" not in cfg and "mode" in cfg:
+        cfg = _upgrade_legacy(cfg, io)
 
-    parsed: dict[str, Any] = {"mode": mode, "variable_id": variable_id}
+    im = cfg.get("input_mapping")
+    om = cfg.get("output_mapping")
 
-    if mode == "assign":
-        source = str(cfg.get("source") or "").strip().lower()
-        if source not in SOURCES:
-            raise VariableError("Value source must be 'Node Output' or 'Static Value'.")
-        if source == "static":
-            value = cfg.get("static_value")
-            if value is None or value == "":
-                raise VariableError("Static Value source requires a value.")
-            parsed["static_value"] = value
-        parsed["source"] = source
-
+    parsed = {
+        "input":  _parse_input(im, io)  if isinstance(im, dict) and im.get("enabled") else None,
+        "output": _parse_output(om, io) if isinstance(om, dict) and om.get("enabled") else None,
+    }
+    if not parsed["input"] and not parsed["output"]:
+        return None
     return parsed
 
 
@@ -70,9 +131,11 @@ class VariableRuntime:
     def validate_nodes(self, nodes) -> None:
         for node in nodes:
             try:
-                cfg = parse_variable_config(node.data)
+                cfg = parse_variable_config(node.data, node.type)
                 if cfg:
-                    self.definition(cfg["variable_id"])
+                    for key in ("input", "output"):
+                        if cfg[key]:
+                            self.definition(cfg[key]["variable_id"])
             except VariableError as exc:
                 raise VariableError(
                     f"Node '{node.id}' ({node.type}): {exc.message}", exc.status_code

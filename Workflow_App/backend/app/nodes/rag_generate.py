@@ -64,7 +64,12 @@ def rag_generate_node(state, config):
     print(f"🏷  Provider      : {provider}")
     print(f"🧩 Model         : {model_name}")
 
-    context = "\n\n".join([d.page_content for d in docs])
+    override = state.get("variable_context")
+    context = (
+        str(override)
+        if override is not None
+        else "\n\n".join([d.page_content for d in docs])
+    )
 
     if user_prompt:
         if "{question}" in user_prompt:

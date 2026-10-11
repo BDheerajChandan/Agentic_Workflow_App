@@ -1,21 +1,28 @@
 # app/graph/builder.py
 
+import json
+import time
+
 from langgraph.graph import StateGraph, END
 
 from app.graph.state import GraphState
-from app.nodes.registry import NODE_REGISTRY, NODE_OUTPUT_RESOLVERS
-from app.variables import VariableRuntime, parse_variable_config
+from app.nodes.io_schema import find_input, find_output, primary_value
+from app.nodes.registry import NODE_REGISTRY
+from app.variables import VariableError, VariableRuntime, parse_variable_config
 
 
-def _node_output(node_type, result, run_state):
-    resolver = NODE_OUTPUT_RESOLVERS.get(node_type)
-    if resolver:
-        return resolver(result)
-    if "current_value" in result:
-        return result["current_value"]
-    if "final_output" in result:
-        return result["final_output"]
-    return run_state.get("current_value")
+def _safe(obj):
+    if isinstance(obj, dict):
+        return {k: _safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_safe(i) for i in obj]
+    if hasattr(obj, "page_content"):
+        return {"page_content": obj.page_content, "metadata": obj.metadata}
+    try:
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError):
+        return str(obj)
 
 
 def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=None):
@@ -42,34 +49,72 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
 
         node_configs[node.id] = node
 
-        def create_wrapped_function(fn, config, node_id, node_type, is_entry, var_cfg):
+        def create_wrapped_function(fn, config, node_id, node_type, var_cfg):
 
             def wrapped(state):
+                started = time.time()
                 if event_callback:
                     event_callback(node_id, "running")
+                run_state = state
+                result = None
+                error = None
                 try:
-                    run_state = state
+                    transient_key = None
 
-                    if var_cfg and var_cfg["mode"] == "read":
-                        value = runtime.read(var_cfg["variable_id"])
-                        run_state = {**state, "current_value": value}
-                        if is_entry:
-                            run_state["input"] = value
+                    # ── Input Value Mapping: Variable → Node Input ──────────
+                    if var_cfg and var_cfg["input"]:
+                        im = var_cfg["input"]
+                        target = find_input(node_type, im["target"])
+                        if not target:
+                            raise VariableError(
+                                f"Input '{im['target']}' does not exist on node type '{node_type}'."
+                            )
+                        value = runtime.read(im["variable_id"])
+                        run_state = {**state, target["state_key"]: value}
+                        if target.get("transient"):
+                            transient_key = target["state_key"]
 
                     result = fn(run_state, config)
 
-                    if var_cfg and var_cfg["mode"] == "assign":
-                        if var_cfg["source"] == "static":
-                            value = var_cfg["static_value"]
+                    if transient_key and transient_key not in state:
+                        result = {k: v for k, v in result.items() if k != transient_key}
+
+                    # ── Output Value Mapping: Node Output / Static → Variable ─
+                    if var_cfg and var_cfg["output"]:
+                        om = var_cfg["output"]
+                        if om["source"] == "static":
+                            value = om["static_value"]
                         else:
-                            value = _node_output(node_type, result, run_state)
-                        runtime.assign(var_cfg["variable_id"], value)
+                            source = find_output(node_type, om["output"])
+                            if not source:
+                                raise VariableError(
+                                    f"Output '{om['output']}' does not exist on node type '{node_type}'."
+                                )
+                            value = source["resolve"](result)
+                            if value is None:
+                                raise VariableError(
+                                    f"Output '{source['label']}' produced no value to store."
+                                )
+                        runtime.assign(om["variable_id"], value)
 
                     snapshot = runtime.snapshot()
                     if snapshot:
                         result = {**result, "variables": snapshot}
+                except Exception as exc:
+                    error = str(exc)
+                    raise
                 finally:
                     if event_callback:
+                        event_callback(node_id, "trace", {
+                            "node_id": node_id,
+                            "node_type": node_type,
+                            "status": "failed" if error else "passed",
+                            "input": _safe(run_state),
+                            "output": _safe(result),
+                            "value": _safe(primary_value(node_type, result)),
+                            "error": error,
+                            "duration_ms": int((time.time() - started) * 1000),
+                        })
                         event_callback(node_id, "done")
                 return result
 
@@ -82,8 +127,7 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                 node.data,
                 node.id,
                 node.type,
-                node.id not in targets,
-                parse_variable_config(node.data),
+                parse_variable_config(node.data, node.type),
             )
         )
 

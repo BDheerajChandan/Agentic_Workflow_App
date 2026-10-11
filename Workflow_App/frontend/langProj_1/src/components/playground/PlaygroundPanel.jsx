@@ -7,6 +7,7 @@ export default function PlaygroundPanel({
   output,
   onSend,
   loading,
+  onClose,
 }) {
 
   const [message, setMessage] = useState("");
@@ -114,12 +115,21 @@ export default function PlaygroundPanel({
           </div>
         </div>
 
-        <button
-          style={styles.downloadBtn}
-          onClick={downloadChat}
-        >
-          Download Chat
-        </button>
+                <div style={styles.headerActions}>
+          <button
+            style={styles.downloadBtn}
+            onClick={downloadChat}
+          >
+            Download Chat
+          </button>
+
+          <button
+            style={styles.downloadBtn}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
 
       </div>
 
@@ -227,6 +237,12 @@ const styles = {
     fontSize: 11,
     color: "#64748b",
     marginTop: 2,
+  },
+
+    headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
   },
 
   downloadBtn: {

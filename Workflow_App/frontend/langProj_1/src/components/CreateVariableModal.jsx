@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  createVariable, deleteVariable, listBotWorkflows, listVariables,
+  createVariable, updateVariable, deleteVariable, listBotWorkflows, listVariables,
 } from "../services/api";
 import { NativeSelect } from "../registry/settings/fields";
 
@@ -10,6 +10,7 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
   const [name,       setName]       = useState("");
   const [visibility, setVisibility] = useState("public");
   const [workflowId, setWorkflowId] = useState(flowId != null ? String(flowId) : "");
+  const [editingId,  setEditingId]  = useState(null);
   const [workflows,  setWorkflows]  = useState([]);
   const [variables,  setVariables]  = useState([]);
   const [saving,     setSaving]     = useState(false);
@@ -36,6 +37,22 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
     : [{ workflow_id: flowId, workflow_name: flowName }]
   ).map((w) => ({ value: String(w.workflow_id), label: w.workflow_name }));
 
+  const resetForm = () => {
+    setEditingId(null);
+    setName("");
+    setVisibility("public");
+    setWorkflowId(flowId != null ? String(flowId) : "");
+    setError("");
+  };
+
+  const startEdit = (v) => {
+    setEditingId(v.variable_id);
+    setName(v.name);
+    setVisibility(v.visibility);
+    setWorkflowId(v.flow_id != null ? String(v.flow_id) : (flowId != null ? String(flowId) : ""));
+    setError("");
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -43,17 +60,22 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
     if (visibility === "private" && !workflowId) return setError("Select a workflow.");
     setError("");
     setSaving(true);
+    const body = {
+      name: name.trim(),
+      visibility,
+      flow_id: visibility === "private" ? Number(workflowId) : null,
+    };
     try {
-      await createVariable({
-        name: name.trim(),
-        visibility,
-        flow_id: visibility === "private" ? Number(workflowId) : null,
-      });
-      setName("");
+      if (editingId != null) await updateVariable(editingId, body);
+      else await createVariable(body);
+      resetForm();
       await loadVariables();
       onChanged?.();
     } catch (err) {
-      setError(err?.response?.data?.detail || "Failed to create variable.");
+      setError(
+        err?.response?.data?.detail ||
+          (editingId != null ? "Failed to update variable." : "Failed to create variable.")
+      );
     } finally {
       setSaving(false);
     }
@@ -63,6 +85,7 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
     if (!window.confirm(`Delete variable "${v.name}"? Nodes using it will fail until reassigned.`)) return;
     try {
       await deleteVariable(v.variable_id);
+      if (editingId === v.variable_id) resetForm();
       await loadVariables();
       onChanged?.();
     } catch (err) {
@@ -74,7 +97,7 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
     <div style={s.overlay} onClick={onClose}>
       <form style={s.panel} onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <div style={s.header}>
-          <div style={s.title}>Create Variable</div>
+          <div style={s.title}>{editingId != null ? "Edit Variable" : "Create Variable"}</div>
           <button type="button" style={s.closeBtn} onClick={onClose}>✕</button>
         </div>
 
@@ -120,9 +143,13 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
         {error && <div style={s.error}>{error}</div>}
 
         <div style={s.actions}>
-          <button type="button" style={s.cancelBtn} onClick={onClose}>Close</button>
+          {editingId != null ? (
+            <button type="button" style={s.cancelBtn} onClick={resetForm}>Cancel Edit</button>
+          ) : (
+            <button type="button" style={s.cancelBtn} onClick={onClose}>Close</button>
+          )}
           <button type="submit" style={{ ...s.saveBtn, opacity: saving ? 0.6 : 1 }} disabled={saving}>
-            {saving ? "Saving…" : "Create Variable"}
+            {saving ? "Saving…" : editingId != null ? "Save Changes" : "Create Variable"}
           </button>
         </div>
 
@@ -130,14 +157,25 @@ export default function CreateVariableModal({ flowId, flowName, onClose, onChang
         <div style={s.list}>
           {variables.length === 0 && <div style={s.empty}>No variables yet.</div>}
           {variables.map((v) => (
-            <div key={v.variable_id} style={s.row}>
+            <div
+              key={v.variable_id}
+              style={{
+                ...s.row,
+                borderColor: editingId === v.variable_id ? "#6366f1" : "#1e293b",
+              }}
+            >
               <div>
                 <span style={s.rowName}>{v.name}</span>
                 <span style={s.rowMeta}>
                   {v.visibility === "private" ? `Private · ${v.workflow_name || v.flow_id}` : "Public"}
                 </span>
               </div>
-              <button type="button" style={s.delBtn} onClick={() => remove(v)} title="Delete variable">✕</button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" style={s.editBtn} onClick={() => startEdit(v)} title="Edit variable">
+                  Edit
+                </button>
+                <button type="button" style={s.delBtn} onClick={() => remove(v)} title="Delete variable">✕</button>
+              </div>
             </div>
           ))}
         </div>
@@ -197,5 +235,9 @@ const s = {
   },
   rowName: { fontSize: 12, color: "#e2e8f0", fontWeight: 600, marginRight: 8 },
   rowMeta: { fontSize: 10, color: "#64748b" },
+  editBtn: {
+    padding: "2px 8px", borderRadius: 6, border: "1px solid #334155",
+    background: "transparent", color: "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer",
+  },
   delBtn: { background: "transparent", border: "none", color: "#475569", fontSize: 12, cursor: "pointer" },
 };

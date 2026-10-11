@@ -170,6 +170,28 @@ async def init_db() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_variables_public_name "
             "ON variables(name) WHERE visibility = 'public';"
         )
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS workflow_runs (
+                run_id        SERIAL PRIMARY KEY,
+                flow_id       INTEGER NOT NULL REFERENCES flows(id) ON DELETE CASCADE,
+                workflow_name TEXT NOT NULL,
+                status        TEXT NOT NULL,
+                started_at    TIMESTAMPTZ NOT NULL,
+                ended_at      TIMESTAMPTZ NOT NULL,
+                duration_ms   INTEGER NOT NULL DEFAULT 0,
+                input         TEXT,
+                result        JSONB,
+                node_states   JSONB NOT NULL DEFAULT '[]',
+                variables     JSONB NOT NULL DEFAULT '{}',
+                error         TEXT
+            );
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_workflow_runs_flow "
+            "ON workflow_runs(flow_id, started_at DESC);"
+        )
+
         await conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_variables_private_name "
             "ON variables(flow_id, name) WHERE visibility = 'private';"
@@ -722,3 +744,95 @@ async def delete_variable(variable_id: int) -> bool:
     async with pool.acquire() as conn:
         result = await conn.execute("DELETE FROM variables WHERE variable_id=$1", variable_id)
     return result != "DELETE 0"
+
+
+
+# ─── workflow run history ─────────────────────────────────────────────────────
+
+def _json_field(value):
+    if value is None or isinstance(value, (dict, list)):
+        return value
+    return json.loads(value)
+
+
+async def record_run(
+    flow_id: int,
+    status: str,
+    started_at,
+    ended_at,
+    input_value: str,
+    result,
+    node_states: list,
+    variables: dict,
+    error: str | None = None,
+) -> int | None:
+    duration_ms = max(0, int((ended_at - started_at).total_seconds() * 1000))
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        name = await conn.fetchval("SELECT name FROM flows WHERE id=$1", flow_id)
+        if name is None:
+            return None
+        return await conn.fetchval(
+            """
+            INSERT INTO workflow_runs
+                (flow_id, workflow_name, status, started_at, ended_at, duration_ms,
+                 input, result, node_states, variables, error)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING run_id
+            """,
+            flow_id, name, status, started_at, ended_at, duration_ms,
+            input_value, json.dumps(result), json.dumps(node_states or []),
+            json.dumps(variables or {}), error,
+        )
+
+
+async def list_runs(flow_id: int, limit: int = 100) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT run_id, flow_id, workflow_name, status,
+                   started_at, ended_at, duration_ms, error
+            FROM workflow_runs
+            WHERE flow_id=$1
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT $2
+            """,
+            flow_id, limit,
+        )
+    return [_jsonable(r) for r in rows]
+
+
+async def get_run(flow_id: int, run_id: int) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM workflow_runs WHERE flow_id=$1 AND run_id=$2",
+            flow_id, run_id,
+        )
+    if not row:
+        return None
+    d = _jsonable(row)
+    for key in ("result", "node_states", "variables"):
+        d[key] = _json_field(d.get(key))
+    return d
+
+
+
+async def delete_run(flow_id: int, run_id: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM workflow_runs WHERE flow_id=$1 AND run_id=$2",
+            flow_id, run_id,
+        )
+    return result != "DELETE 0"
+
+
+async def delete_all_runs(flow_id: int) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM workflow_runs WHERE flow_id=$1", flow_id
+        )
+    return int(result.split()[-1])
