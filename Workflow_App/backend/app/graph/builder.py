@@ -59,43 +59,45 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                 result = None
                 error = None
                 try:
-                    transient_key = None
+                    transient_keys = set()
 
-                    # ── Input Value Mapping: Variable → Node Input ──────────
+                    # ── Input Value Mapping: Variable → Node Input (configured order) ──
                     if var_cfg and var_cfg["input"]:
-                        im = var_cfg["input"]
-                        target = find_input(node_type, im["target"])
-                        if not target:
-                            raise VariableError(
-                                f"Input '{im['target']}' does not exist on node type '{node_type}'."
-                            )
-                        value = runtime.read(im["variable_id"])
-                        run_state = {**state, target["state_key"]: value}
-                        if target.get("transient"):
-                            transient_key = target["state_key"]
+                        updates = {}
+                        for im in var_cfg["input"]:
+                            target = find_input(node_type, im["target"])
+                            if not target:
+                                raise VariableError(
+                                    f"Input '{im['target']}' does not exist on node type '{node_type}'."
+                                )
+                            updates[target["state_key"]] = runtime.read(im["variable_id"])
+                            if target.get("transient"):
+                                transient_keys.add(target["state_key"])
+                        run_state = {**state, **updates}
 
                     result = fn(run_state, config)
 
-                    if transient_key and transient_key not in state:
-                        result = {k: v for k, v in result.items() if k != transient_key}
+                    strip = {k for k in transient_keys if k not in state}
+                    if strip:
+                        result = {k: v for k, v in result.items() if k not in strip}
 
-                    # ── Output Value Mapping: Node Output / Static → Variable ─
+                    # ── Output Value Mapping: Node Output / Static → Variable (configured order) ──
                     if var_cfg and var_cfg["output"]:
-                        om = var_cfg["output"]
-                        if om["source"] == "static":
-                            value = om["static_value"]
-                        else:
-                            source = find_output(node_type, om["output"])
-                            if not source:
-                                raise VariableError(
-                                    f"Output '{om['output']}' does not exist on node type '{node_type}'."
-                                )
-                            value = source["resolve"](result)
-                            if value is None:
-                                raise VariableError(
-                                    f"Output '{source['label']}' produced no value to store."
-                                )
-                        runtime.assign(om["variable_id"], value)
+                        for om in var_cfg["output"]:
+                            if om["source"] == "static":
+                                value = om["static_value"]
+                            else:
+                                source = find_output(node_type, om["output"])
+                                if not source:
+                                    raise VariableError(
+                                        f"Output '{om['output']}' does not exist on node type '{node_type}'."
+                                    )
+                                value = source["resolve"](result)
+                                if value is None:
+                                    raise VariableError(
+                                        f"Output '{source['label']}' produced no value to store."
+                                    )
+                            runtime.assign(om["variable_id"], value)
 
                     snapshot = runtime.snapshot()
                     if snapshot:

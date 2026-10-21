@@ -9,6 +9,16 @@ def _docs_text(result: dict):
     docs = result.get("docs") or []
     return "\n\n".join(d.page_content for d in docs)
 
+def _cv_path(*path):
+    """Resolve a nested key path inside result['current_value'] (used by JSON-returning nodes)."""
+    def resolve(r):
+        cur = r.get("current_value")
+        for key in path:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(key)
+        return cur
+    return resolve
 
 NODE_IO: dict[str, dict] = {
     "start": {
@@ -25,6 +35,11 @@ NODE_IO: dict[str, dict] = {
         ],
         "outputs": [
             {"key": "converted", "label": "Converted Value", "resolve": lambda r: r.get("current_value")},
+            {
+                "key": "converted_type",
+                "label": "Converted Type",
+                "resolve": lambda r: (r.get("data") or {}).get("converted_type"),
+            },
         ],
     },
     "output": {
@@ -60,6 +75,38 @@ NODE_IO: dict[str, dict] = {
                 "label": "Confidence",
                 "resolve": lambda r: (r.get("data") or {}).get("confidence"),
             },
+        ],
+    },
+
+        "base64": {
+        "inputs": [
+            {"key": "value", "label": "Input Text", "state_key": "current_value"},
+        ],
+        "outputs": [
+            {"key": "result", "label": "Encoded / Decoded Text", "resolve": lambda r: r.get("current_value")},
+        ],
+    },
+    "geo_temperature": {
+        "inputs": [
+            {"key": "latitude",  "label": "Latitude",  "state_key": "geo_latitude",  "transient": True},
+            {"key": "longitude", "label": "Longitude", "state_key": "geo_longitude", "transient": True},
+        ],
+        "outputs": [
+            {"key": "weather",     "label": "Full Response (JSON)",  "resolve": lambda r: r.get("current_value")},
+            {"key": "temperature", "label": "Current Temperature °C", "resolve": _cv_path("data", "current", "temperature_c")},
+            {"key": "wind_speed",  "label": "Current Wind Speed",    "resolve": _cv_path("data", "current", "wind_speed")},
+            {"key": "location",    "label": "Location",              "resolve": _cv_path("data", "location", "display")},
+        ],
+    },
+    "geo_location": {
+        "inputs": [
+            {"key": "location_name", "label": "Location Name / Address", "state_key": "current_value"},
+        ],
+        "outputs": [
+            {"key": "location",     "label": "Full Response (JSON)", "resolve": lambda r: r.get("current_value")},
+            {"key": "latitude",     "label": "Latitude",             "resolve": _cv_path("data", "latitude")},
+            {"key": "longitude",    "label": "Longitude",            "resolve": _cv_path("data", "longitude")},
+            {"key": "display_name", "label": "Display Name",         "resolve": _cv_path("data", "display_name")},
         ],
     },
 }

@@ -43,51 +43,116 @@ def _upgrade_legacy(cfg: dict, io: dict) -> dict:
     raise VariableError("Variable mode must be 'assign' or 'read'.")
 
 
-def _variable_id(mapping: dict, label: str) -> int:
+# ─── Binding dictionaries ─────────────────────────────────────────────────────
+# bindings: dict (1 key = single mapping, n keys = multiple mappings)
+# order:    list of keys; JSONB does not preserve object key order, arrays it does.
+
+def _ordered(bindings: dict, order) -> list[tuple[str, Any]]:
+    seen: set[str] = set()
+    keys: list[str] = []
+    for k in order if isinstance(order, list) else []:
+        if isinstance(k, str) and k in bindings and k not in seen:
+            seen.add(k)
+            keys.append(k)
+    for k in bindings:
+        if k not in seen:
+            seen.add(k)
+            keys.append(k)
+    return [(k, bindings[k]) for k in keys]
+
+
+def _bindings(mapping: dict, kind: str) -> list[tuple[str, dict]]:
+    """Ordered (key, value) pairs for both the dictionary shape and the legacy flat shape."""
+    raw = mapping.get("bindings")
+    if isinstance(raw, dict):
+        return [
+            (k, v if isinstance(v, dict) else {})
+            for k, v in _ordered(raw, mapping.get("order"))
+        ]
+    # legacy flat single mapping == one-key dictionary
+    if kind == "input":
+        return [(
+            str(mapping.get("target") or "").strip(),
+            {"variable_id": mapping.get("variable_id")},
+        )]
+    vid = mapping.get("variable_id")
+    return [(
+        "" if vid is None else str(vid),
+        {k: mapping.get(k) for k in ("source", "output", "static_value")},
+    )]
+
+
+def _to_variable_id(raw, label: str) -> int:
     try:
-        return int(mapping.get("variable_id"))
+        return int(raw)
     except (TypeError, ValueError):
         raise VariableError(f"{label}: no variable selected.")
 
 
-def _parse_input(mapping: dict, io: dict) -> dict:
+def _parse_input(mapping: dict, io: dict) -> list[dict]:
     label = "Input Value Mapping"
-    variable_id = _variable_id(mapping, label)
-    target = str(mapping.get("target") or "").strip()
-    if not target:
-        raise VariableError(f"{label}: select a target input.")
-    if not any(i["key"] == target for i in io["inputs"]):
-        raise VariableError(f"{label}: input '{target}' does not exist on this node.")
-    return {"variable_id": variable_id, "target": target}
+    by_key = {i["key"]: i for i in io["inputs"]}
+    parsed: list[dict] = []
+
+    for key, binding in _bindings(mapping, "input"):
+        target = str(key or "").strip()
+        if not target:
+            raise VariableError(f"{label}: select a target input.")
+        if target not in by_key:
+            raise VariableError(f"{label}: input '{target}' does not exist on this node.")
+        parsed.append({
+            "variable_id": _to_variable_id(binding.get("variable_id"), label),
+            "target": target,
+        })
+
+    if len(parsed) > len(io["inputs"]):
+        raise VariableError(
+            f"{label}: this node supports at most {len(io['inputs'])} input mapping(s)."
+        )
+    targets = [p["target"] for p in parsed]
+    state_keys = [by_key[t]["state_key"] for t in targets]
+    if len(set(targets)) != len(targets) or len(set(state_keys)) != len(state_keys):
+        raise VariableError(f"{label}: conflicting mappings, an input is mapped more than once.")
+    return parsed
 
 
-def _parse_output(mapping: dict, io: dict) -> dict:
+def _parse_output(mapping: dict, io: dict) -> list[dict]:
     label = "Output Value Mapping"
-    variable_id = _variable_id(mapping, label)
-    source = str(mapping.get("source") or "node_output").strip().lower()
-    if source not in SOURCES:
-        raise VariableError(f"{label}: source must be 'Node Output' or 'Static Value'.")
+    outputs = {o["key"] for o in io["outputs"]}
+    parsed: list[dict] = []
 
-    parsed: dict[str, Any] = {"variable_id": variable_id, "source": source}
-    if source == "static":
-        value = mapping.get("static_value")
-        if value is None or value == "":
-            raise VariableError(f"{label}: Static Value source requires a value.")
-        parsed["static_value"] = value
-    else:
-        output = str(mapping.get("output") or "").strip()
-        if not output:
-            raise VariableError(f"{label}: select a source output.")
-        if not any(o["key"] == output for o in io["outputs"]):
-            raise VariableError(f"{label}: output '{output}' does not exist on this node.")
-        parsed["output"] = output
+    for key, binding in _bindings(mapping, "output"):
+        variable_id = _to_variable_id(key, label)
+        source = str(binding.get("source") or "node_output").strip().lower()
+        if source not in SOURCES:
+            raise VariableError(f"{label}: source must be 'Node Output' or 'Static Value'.")
+
+        item: dict[str, Any] = {"variable_id": variable_id, "source": source}
+        if source == "static":
+            value = binding.get("static_value")
+            if value is None or value == "":
+                raise VariableError(f"{label}: Static Value source requires a value.")
+            item["static_value"] = value
+        else:
+            output = str(binding.get("output") or "").strip()
+            if not output:
+                raise VariableError(f"{label}: select a source output.")
+            if output not in outputs:
+                raise VariableError(f"{label}: output '{output}' does not exist on this node.")
+            item["output"] = output
+        parsed.append(item)
+
+    ids = [p["variable_id"] for p in parsed]
+    if len(set(ids)) != len(ids):
+        raise VariableError(f"{label}: conflicting mappings, a variable is assigned more than once.")
     return parsed
 
 
 def parse_variable_config(node_data: dict | None, node_type: str | None = None) -> dict | None:
     """
-    Returns {"input": {...}|None, "output": {...}|None} for a node, or None when
-    variables are disabled / no mapping is enabled.
+    Returns {"input": [ {variable_id, target}, ... ] | None,
+             "output": [ {variable_id, source, output|static_value}, ... ] | None}
+    in configured order, or None when variables are disabled / no mapping is enabled.
     """
     cfg = (node_data or {}).get("variable")
     if not isinstance(cfg, dict) or not cfg.get("enabled"):
@@ -102,8 +167,8 @@ def parse_variable_config(node_data: dict | None, node_type: str | None = None) 
     om = cfg.get("output_mapping")
 
     parsed = {
-        "input":  _parse_input(im, io)  if isinstance(im, dict) and im.get("enabled") else None,
-        "output": _parse_output(om, io) if isinstance(om, dict) and om.get("enabled") else None,
+        "input":  (_parse_input(im, io) or None)  if isinstance(im, dict) and im.get("enabled") else None,
+        "output": (_parse_output(om, io) or None) if isinstance(om, dict) and om.get("enabled") else None,
     }
     if not parsed["input"] and not parsed["output"]:
         return None
@@ -134,8 +199,8 @@ class VariableRuntime:
                 cfg = parse_variable_config(node.data, node.type)
                 if cfg:
                     for key in ("input", "output"):
-                        if cfg[key]:
-                            self.definition(cfg[key]["variable_id"])
+                        for binding in cfg[key] or []:
+                            self.definition(binding["variable_id"])
             except VariableError as exc:
                 raise VariableError(
                     f"Node '{node.id}' ({node.type}): {exc.message}", exc.status_code

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { listBots } from "../services/botApi";
 import BotFormModal from "./BotFormModal";
 
+
 const FLOW_APP_URL = import.meta.env.VITE_FLOW_APP_URL || "http://localhost:5173";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
@@ -24,6 +25,7 @@ export default function BotSetup() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
   const [formState, setFormState] = useState(null); // { mode: "create" | "edit", bot? }
+  const [query, setQuery] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -40,10 +42,15 @@ export default function BotSetup() {
 
   useEffect(() => { load(); }, []);
 
-  const handleSaved = () => {
+    const handleSaved = () => {
     setFormState(null);
     load();
   };
+
+  const q = query.trim().toLowerCase();
+  const filteredBots = q
+    ? bots.filter((b) => (b.name || "").toLowerCase().includes(q))
+    : bots;
 
   return (
     <div className="setup-root">
@@ -54,6 +61,24 @@ export default function BotSetup() {
             <div className="muted">Select a Bot to start chatting</div>
           </div>
           <div className="setup-head-actions">
+            <div className="bot-search">
+              <input
+                className="inp"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search bots…"
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="bot-search-clear"
+                  title="Clear search"
+                  onClick={() => setQuery("")}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
             <a className="btn btn-ghost" href={FLOW_APP_URL} target="_blank" rel="noreferrer">
               Open Workflow App
             </a>
@@ -64,6 +89,7 @@ export default function BotSetup() {
         </div>
 
         <div className="lbl" style={{ marginTop: 24 }}>My Bots</div>
+        
         {loading && <div className="muted">Loading…</div>}
         {error && <div className="form-error">{error}</div>}
         {!loading && !error && bots.length === 0 && (
@@ -72,8 +98,12 @@ export default function BotSetup() {
           </div>
         )}
 
+        {!loading && !error && bots.length > 0 && filteredBots.length === 0 && (
+          <div className="muted">No bots found</div>
+        )}
+
         <div className="bot-grid">
-          {bots.map((b) => (
+          {filteredBots.map((b) => (
             <div key={b.bot_id} className="bot-card" onClick={() => navigate(`/bots/${b.bot_id}`)}>
               <div className="bot-card-head">
                 <div className="bot-name">🤖 {b.name}</div>

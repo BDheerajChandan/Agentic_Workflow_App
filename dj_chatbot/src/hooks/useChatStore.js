@@ -142,6 +142,36 @@ export function useBot(botId, sessionParam, onSessionChange) {
     }
   };
 
+    const afterDelete = async (deletedIds) => {
+    const { sessions: list } = await api.listSessions(botId);
+    setSessions(list);
+    if (deletedIds === "all" || deletedIds.includes(sessionParam)) {
+      setMessages([]);
+      if (list.length) {
+        onSessionChange(list[0].session_id);
+      } else {
+        const created = await api.createSession(botId);
+        setSessions([created]);
+        onSessionChange(created.session_id);
+      }
+    }
+  };
+
+  const removeSession = async (sessionId) => {
+    await api.deleteSession(botId, sessionId);
+    await afterDelete([sessionId]);
+  };
+
+  const removeSessions = async (sessionIds) => {
+    await api.deleteSessions(botId, sessionIds);
+    await afterDelete(sessionIds);
+  };
+
+  const removeAllSessions = async () => {
+    await api.deleteAllSessions(botId);
+    await afterDelete("all");
+  };
+
   const activeSession = sessions.find((s) => s.session_id === sessionParam) || null;
 
   return {
@@ -156,5 +186,8 @@ export function useBot(botId, sessionParam, onSessionChange) {
     selectSession,
     rename,
     send,
+    removeSession,
+    removeSessions,
+    removeAllSessions,
   };
 }

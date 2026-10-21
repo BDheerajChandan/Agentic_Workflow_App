@@ -100,7 +100,7 @@ export default function RunHistoryModal({ flowId, onClose }) {
                   style={{ ...s.runRow, borderColor: active ? "#6366f1" : "#1e293b" }}
                 >
                   <div style={s.runTop}>
-                    <span style={s.runId}>Run #{r.run_id}</span>
+                    <span style={s.runId}>Run #{r.run_number ?? r.run_id}</span>
                     <span style={{ ...s.badge, background: p.badge }}>{p.label}</span>
                   </div>
                   <div style={s.runMeta}>{fmtDate(r.started_at)}</div>
@@ -125,7 +125,7 @@ export default function RunHistoryModal({ flowId, onClose }) {
             {selected && !loadingRun && (
               <>
                 <div style={s.summary}>
-                  <Row k="Run ID"    v={`#${selected.run_id}`} />
+                  <Row k="Run ID"    v={`#${selected.run_number ?? selected.run_id}`} />
                   <Row k="Workflow"  v={selected.workflow_name} />
                   <Row k="Status"    v={selected.status} />
                   <Row k="Started"   v={fmtDate(selected.started_at)} />

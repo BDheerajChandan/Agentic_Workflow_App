@@ -18,7 +18,7 @@ import CreateVariableModal from "../CreateVariableModal";
 
 // import { nodeTypes } from "../register_nodes";
 // import SettingsPanel from "../nodes/SettingsPanel";
-import { nodeTypes } from "../../registry/node_registration";
+import { nodeTypes, nodeDefaults, extraSidebarNodes } from "../../registry/node_registration";
 import SettingsPanel from "../../registry/SettingsPanel";
 import NodeStatesModal from "../NodeStatesModal";
 import RunHistoryModal from "../RunHistoryModal";
@@ -35,6 +35,7 @@ const SIDEBAR_NODES = [
   { type: "output",         label: "Output",         icon: "◎",  color: "#f87171", bg: "rgba(239,68,68,0.08)",  border: "rgba(248,113,113,0.3)", desc: "Terminal node" },
   { type: "rag_retrieve",   label: "RAG Retrieve",   icon: "📚", color: "#38bdf8", bg: "rgba(56,189,248,0.08)", border: "rgba(56,189,248,0.3)",  desc: "Fetch documents" },
   { type: "rag_generate",   label: "RAG Generate",   icon: "🧠", color: "#a78bfa", bg: "rgba(167,139,250,0.08)",border: "rgba(167,139,250,0.3)", desc: "LLM answer" },
+  ...extraSidebarNodes,
 ];
 
 // ─── Wrapper ──────────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ function FlowCanvas({ routeSlug, onBack }) {
   const [nodeTraces, setNodeTraces] = useState([]);
   const [statesOpen, setStatesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   const playgroundRef = useRef(null);
   useEffect(() => {
@@ -181,7 +183,7 @@ function FlowCanvas({ routeSlug, onBack }) {
       const type = event.dataTransfer.getData("application/reactflow");
       if (!type) return;
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      let defaultData = {};
+      let defaultData = { ...(nodeDefaults[type] || {}) };
       if (type === "type_converter") defaultData = { operation: "upper" };
       if (type === "rag_retrieve")   defaultData = { source_locality: "nonlocal", source: "", source_type: "", chunk_size: 500, chunk_overlap: 100, k: 5 };
       const newNode = { id: getNodeId(), type, position, data: defaultData };
@@ -437,7 +439,7 @@ function FlowCanvas({ routeSlug, onBack }) {
             ＋  Create Variable
           </button>
 
-          <button style={styles.clearBtn} onClick={handleClear}>✕  Clear</button>
+          <button style={styles.clearBtn} onClick={() => setClearConfirmOpen(true)}>✕  Clear</button>
 
           <button
             style={{
@@ -570,6 +572,32 @@ function FlowCanvas({ routeSlug, onBack }) {
         )}
 
       </div>
+
+      {clearConfirmOpen && (
+        <div style={styles.confirmOverlay} onClick={() => setClearConfirmOpen(false)}>
+          <div style={styles.confirmPanel} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.confirmTitle}>Clear Canvas</div>
+            <div style={styles.confirmText}>
+              This will remove all nodes and edges from the canvas and clear the output.
+              Click Save afterwards to make it permanent. Continue?
+            </div>
+            <div style={styles.confirmActions}>
+              <button style={styles.confirmCancel} onClick={() => setClearConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button
+                style={styles.confirmDelete}
+                onClick={() => {
+                  handleClear();
+                  setClearConfirmOpen(false);
+                }}
+              >
+                Yes, Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {historyOpen && (
         <RunHistoryModal
@@ -787,6 +815,28 @@ const styles = {
     border: "1px solid #6366f1", background: "rgba(99,102,241,0.08)",
     color: "#818cf8", fontSize: 12, fontWeight: 600,
     cursor: "pointer", letterSpacing: "0.04em",
+  },
+  confirmOverlay: {
+    position: "fixed", inset: 0, background: "rgba(2,6,23,0.75)",
+    display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000,
+  },
+  confirmPanel: {
+    width: 380, maxWidth: "94vw",
+    background: "#0a0f1e", border: "1px solid #1e293b",
+    borderRadius: 14, padding: 22, color: "#e2e8f0",
+    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+  },
+  confirmTitle: { fontSize: 16, fontWeight: 700, color: "#818cf8", marginBottom: 10 },
+  confirmText: { fontSize: 12, color: "#94a3b8", lineHeight: 1.6 },
+  confirmActions: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 },
+  confirmCancel: {
+    padding: "8px 16px", borderRadius: 9, border: "1px solid #334155",
+    background: "transparent", color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  },
+  confirmDelete: {
+    padding: "8px 18px", borderRadius: 9, border: "1px solid rgba(216, 6, 6, 0.4)",
+    background: "rgba(239,68,68,0.12)", color: "#fca5a5", fontSize: 13, fontWeight: 700, cursor: "pointer",
   },
   variableBtn: {
     width: "100%", padding: "9px 0", borderRadius: 10,

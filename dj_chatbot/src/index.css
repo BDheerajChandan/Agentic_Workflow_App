@@ -212,3 +212,33 @@ a.btn { text-decoration: none; display: inline-block; }
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   color: #475569; font-size: 10px; pointer-events: none;
 }
+
+
+/* ── Chat history selection / delete ─────────────────────── */
+
+.history-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+.history-actions .btn {
+  flex: 1 1 auto; min-width: 0; padding: 5px 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.session-row { display: flex; align-items: flex-start; gap: 8px; }
+.session-main { flex: 1; min-width: 0; }
+.session-check { margin-top: 2px; flex-shrink: 0; cursor: pointer; accent-color: #6366f1; }
+.session-del {
+  flex-shrink: 0; background: transparent; border: none;
+  color: #475569; font-size: 12px; cursor: pointer;
+}
+.session-del:hover { color: #fca5a5; }
+.session-del:disabled { opacity: 0.5; cursor: not-allowed; }
+
+
+/* ── Bot search ──────────────────────────────────────────── */
+.bot-search { position: relative; width: 240px; }
+.bot-search .inp { padding: 8px 30px 8px 12px; }
+.bot-search-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: none; color: #475569;
+  font-size: 12px; cursor: pointer;
+}
+.bot-search-clear:hover { color: #e2e8f0; }

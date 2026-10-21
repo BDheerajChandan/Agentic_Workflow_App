@@ -1,7 +1,7 @@
 // src/components/playground/PlaygroundPanel.jsx`
 
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 export default function PlaygroundPanel({
   output,
@@ -14,13 +14,26 @@ export default function PlaygroundPanel({
 
   const [chatHistory, setChatHistory] = useState([]);
 
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatHistory, sending]);
+
   // =====================================
   // SEND MESSAGE
   // =====================================
 
-  const handleSend = async () => {
+    const handleSend = async () => {
 
     if (!message.trim()) return;
+    if (sendingRef.current) return;
+
+    sendingRef.current = true;
+    setSending(true);
 
     const userMessage = {
       role: "user",
@@ -62,6 +75,16 @@ export default function PlaygroundPanel({
           content: "Execution Failed",
         },
       ]);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (!loading) handleSend();
     }
   };
 
@@ -174,6 +197,8 @@ export default function PlaygroundPanel({
 
         ))}
 
+        <div ref={endRef} />
+
       </div>
 
       {/* INPUT */}
@@ -187,12 +212,13 @@ export default function PlaygroundPanel({
           onChange={(e) =>
             setMessage(e.target.value)
           }
+          onKeyDown={handleKeyDown}
           style={styles.textarea}
         />
 
         <button
           onClick={handleSend}
-          disabled={loading}
+          disabled={loading || sending}
           style={styles.sendBtn}
         >
           {loading ? "Running..." : "Send"}
@@ -294,10 +320,14 @@ const styles = {
   inputSection: {
     padding: 16,
     borderTop: "1px solid #1e293b",
+    display: "flex",
+    alignItems: "stretch",
+    gap: 10,
   },
 
   textarea: {
-    width: "100%",
+    flex: 1,
+    minWidth: 0,
     background: "#0f172a",
     border: "1px solid #334155",
     borderRadius: 10,
@@ -309,9 +339,8 @@ const styles = {
   },
 
   sendBtn: {
-    marginTop: 10,
-    width: "100%",
-    padding: 12,
+    flexShrink: 0,
+    padding: "12px 18px",
     borderRadius: 10,
     border: "none",
     background: "#2563eb",

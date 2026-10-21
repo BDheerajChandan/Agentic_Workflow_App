@@ -8,6 +8,11 @@ from app.nodes.output import output_node
 from app.nodes.rag_retrieve import rag_retrieve_node
 from app.nodes.rag_generate import rag_generate_node
 
+# NEW UTILITY / GEO NODES
+from app.nodes.base64_node import base64_node
+from app.nodes.geo_temperature import geo_temperature_node
+from app.nodes.geo_location import geo_location_node
+
 NODE_REGISTRY = {
     "start": start_node,
     "type_converter": type_converter_node,
@@ -16,4 +21,9 @@ NODE_REGISTRY = {
     # RAG
     "rag_retrieve": rag_retrieve_node,
     "rag_generate": rag_generate_node,
+
+    # Utility / Geo
+    "base64": base64_node,
+    "geo_temperature": geo_temperature_node,
+    "geo_location": geo_location_node,
 }

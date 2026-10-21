@@ -98,3 +98,19 @@ export const updateBot = (botId, payload) =>
     method: "PUT",
     body: JSON.stringify(payload), // { name?, flow_id? }
   });
+
+
+export const deleteSession = (botId, sessionId) =>
+  request(
+    `/bots/${encodeURIComponent(botId)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" }
+  );
+
+export const deleteSessions = (botId, sessionIds) =>
+  request(`/bots/${encodeURIComponent(botId)}/sessions/delete`, {
+    method: "POST",
+    body: JSON.stringify({ session_ids: sessionIds }),
+  });
+
+export const deleteAllSessions = (botId) =>
+  request(`/bots/${encodeURIComponent(botId)}/sessions`, { method: "DELETE" });

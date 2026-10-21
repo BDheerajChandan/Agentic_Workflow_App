@@ -1,13 +1,18 @@
 // src/registry/settings/VariableSection.jsx
-// Generic Input / Output Value Mapping, rendered at the bottom of every
-// variable-capable node's Settings Panel. Stored in node.data.variable:
-// { enabled, input_mapping: {enabled, variable_id, target},
-//            output_mapping: {enabled, variable_id, source, output, static_value} }
+// Generic Input / Output Value Mapping (single or multiple), rendered at the bottom of every
+// variable-capable node's Settings Panel. Stored in node.data.variable using binding dictionaries:
+//   input_mapping:  { enabled, bindings: { "<target input key>": { variable_id } },            order: [keys] }
+//   output_mapping: { enabled, bindings: { "<variable_id>": { source, output|static_value } }, order: [keys] }
+// One key = single mapping, n keys = multiple. `order` (an array) preserves execution order.
+// The legacy flat single-mapping shape is still read and treated as a one-key dictionary.
 
 import React, { useEffect, useState } from "react";
 import { getNodeIO, listVariables } from "../../services/api";
 import { Field, SelectField } from "./fields";
-import { lbl, variableBox, checkRow, sectionNote, infoBox, mappingBox } from "./styles";
+import {
+  lbl, variableBox, checkRow, sectionNote, infoBox, mappingBox,
+  rowBox, rowHead, miniBtn, miniBtnDanger, miniBtnDisabled,
+} from "./styles";
 
 const SOURCE_OPTIONS = [
   { value: "node_output", label: "Node Output" },
@@ -54,6 +59,70 @@ function normalize(cfg, io) {
   };
 }
 
+// ── binding dictionary <-> row array helpers ────────────────────────────────
+function orderedKeys(bindings, order) {
+  const seen = new Set();
+  const keys = [];
+  (Array.isArray(order) ? order : []).forEach((k) => {
+    if (k in bindings && !seen.has(k)) { seen.add(k); keys.push(k); }
+  });
+  Object.keys(bindings).forEach((k) => {
+    if (!seen.has(k)) { seen.add(k); keys.push(k); }
+  });
+  return keys;
+}
+
+function inputRows(m) {
+  if (m && m.bindings && typeof m.bindings === "object") {
+    return orderedKeys(m.bindings, m.order).map((k) => ({
+      target: k,
+      variable_id: m.bindings[k]?.variable_id ?? null,
+    }));
+  }
+  return [{ target: m?.target || "", variable_id: m?.variable_id ?? null }];
+}
+
+const toInputMapping = (enabled, rows) => ({
+  enabled,
+  bindings: Object.fromEntries(rows.map((r) => [r.target, { variable_id: r.variable_id }])),
+  order: rows.map((r) => r.target),
+});
+
+function outputRows(m) {
+  if (m && m.bindings && typeof m.bindings === "object") {
+    return orderedKeys(m.bindings, m.order).map((k) => {
+      const b = m.bindings[k] || {};
+      return {
+        variable_id: k === "" ? null : Number(k),
+        source: b.source || "node_output",
+        output: b.output,
+        static_value: b.static_value,
+      };
+    });
+  }
+  return [{
+    variable_id: m?.variable_id ?? null,
+    source: m?.source || "node_output",
+    output: m?.output,
+    static_value: m?.static_value,
+  }];
+}
+
+const outKey = (r) => (r.variable_id == null ? "" : String(r.variable_id));
+
+const toOutputMapping = (enabled, rows) => ({
+  enabled,
+  bindings: Object.fromEntries(
+    rows.map((r) => [
+      outKey(r),
+      r.source === "static"
+        ? { source: "static", static_value: r.static_value ?? "" }
+        : { source: "node_output", output: r.output },
+    ])
+  ),
+  order: rows.map(outKey),
+});
+
 export default function VariableSection({ localData, nodeType, patch, flowId, variablesVersion }) {
   const [nodeIO,    setNodeIO]    = useState(null);
   const [variables, setVariables] = useState([]);
@@ -65,7 +134,6 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
   const enabled = cfg.enabled;
   const im = cfg.input_mapping;
   const om = cfg.output_mapping;
-  const source = om.source || "node_output";
 
   useEffect(() => {
     let cancelled = false;
@@ -88,17 +156,20 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
     return () => { cancelled = true; };
   }, [enabled, flowId, variablesVersion]);
 
-  const update    = (updates) => patch({ variable: { ...cfg, ...updates } });
-  const updateIn  = (u) => update({ input_mapping:  { ...im, ...u } });
-  const updateOut = (u) => update({ output_mapping: { ...om, ...u } });
+  const update = (updates) => patch({ variable: { ...cfg, ...updates } });
 
-  const varOptions = (selectedId) => {
+  const varOptions = (selectedId, excludeIds = []) => {
     const opts = [
       { value: "", label: "Select Variable" },
-      ...variables.map((v) => ({
-        value: String(v.variable_id),
-        label: `${v.name} (${v.visibility === "private" ? "Private" : "Public"})`,
-      })),
+      ...variables
+        .filter((v) => {
+          const id = String(v.variable_id);
+          return id === selectedId || !excludeIds.includes(id);
+        })
+        .map((v) => ({
+          value: String(v.variable_id),
+          label: `${v.name} (${v.visibility === "private" ? "Private" : "Public"})`,
+        })),
     ];
     if (selectedId && loaded && !variables.some((v) => String(v.variable_id) === selectedId)) {
       opts.push({ value: selectedId, label: `⚠ Unavailable (#${selectedId})` });
@@ -115,8 +186,43 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
   const outputOptions = (io?.outputs || []).map((o) => ({ value: o.key, label: o.label }));
   const labelOf = (opts, key) => opts.find((o) => o.value === key)?.label || "—";
 
-  const inVarId  = im.variable_id != null ? String(im.variable_id) : "";
-  const outVarId = om.variable_id != null ? String(om.variable_id) : "";
+  const firstIn  = io?.inputs[0]?.key  || "";
+  const firstOut = io?.outputs[0]?.key || "";
+
+  // ── Input rows ───────────────────────────────────────────────────────────
+  const inRows = inputRows(im).map((r) => ({ ...r, target: r.target || firstIn }));
+  const setInRows = (rows) => update({ input_mapping: toInputMapping(true, rows) });
+  const updIn = (idx, u) => setInRows(inRows.map((r, i) => (i === idx ? { ...r, ...u } : r)));
+  const removeIn = (idx) => {
+    const next = inRows.filter((_, i) => i !== idx);
+    setInRows(next.length ? next : [{ target: firstIn, variable_id: null }]);
+  };
+  const unusedIn = io?.inputs.find((i) => !inRows.some((r) => r.target === i.key));
+  const canAddIn = !!unusedIn;
+  const addIn = () => canAddIn && setInRows([...inRows, { target: unusedIn.key, variable_id: null }]);
+
+  // ── Output rows ──────────────────────────────────────────────────────────
+  const outRows = outputRows(om).map((r) => ({ ...r, output: r.output || firstOut }));
+  const setOutRows = (rows) => update({ output_mapping: toOutputMapping(true, rows) });
+  const updOut = (idx, u) => setOutRows(outRows.map((r, i) => (i === idx ? { ...r, ...u } : r)));
+  const removeOut = (idx) => {
+    const next = outRows.filter((_, i) => i !== idx);
+    setOutRows(next.length ? next : [{ variable_id: null, source: "node_output", output: firstOut }]);
+  };
+  const canAddOut =
+    !!io && outRows.length < variables.length && outRows.every((r) => r.variable_id != null);
+  const addOut = () =>
+    canAddOut &&
+    setOutRows([...outRows, { variable_id: null, source: "node_output", output: firstOut }]);
+
+  const addTitle = (can, noun, blocked) =>
+    can
+      ? `Add ${noun} mapping`
+      : blocked
+      ? "Select a variable in the current row first"
+      : noun === "output"
+      ? "All available variables are already mapped"
+      : `This node has no additional ${noun}s to map`;
 
   return (
     <div style={variableBox}>
@@ -144,29 +250,62 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                 disabled={!io}
                 onChange={(e) =>
                   e.target.checked
-                    ? updateIn({ enabled: true, target: im.target || io.inputs[0]?.key })
-                    : updateIn({ enabled: false })
+                    ? setInRows(inRows)
+                    : update({ input_mapping: { ...im, enabled: false } })
                 }
               />
               Enable
             </label>
 
             {im.enabled && (
-              <div style={{ marginTop: 12 }}>
-                <SelectField
-                  label="Variable"
-                  value={inVarId}
-                  onChange={(val) => updateIn({ variable_id: val ? Number(val) : null })}
-                  options={varOptions(inVarId)}
-                />
-                <SelectField
-                  label="Target Input"
-                  value={im.target || ""}
-                  onChange={(val) => updateIn({ target: val })}
-                  options={inputOptions}
-                />
-                <div style={sectionNote}>
-                  Mapping: {inVarId ? varName(inVarId) : "Variable"} → {labelOf(inputOptions, im.target)}
+              <div>
+                {inRows.map((r, idx) => {
+                  const varId = r.variable_id != null ? String(r.variable_id) : "";
+                  const targetOpts = inputOptions.filter(
+                    (o) => o.value === r.target || !inRows.some((x, j) => j !== idx && x.target === o.value)
+                  );
+                  return (
+                    <div key={`in-${r.target}`} style={rowBox}>
+                      <div style={rowHead}>
+                        <span style={{ ...lbl, marginBottom: 0 }}>Mapping {idx + 1}</span>
+                        <button
+                          type="button"
+                          style={miniBtnDanger}
+                          title="Remove mapping"
+                          onClick={() => removeIn(idx)}
+                        >
+                          ✕ Delete
+                        </button>
+                      </div>
+                      <SelectField
+                        label="Variable"
+                        value={varId}
+                        onChange={(val) => updIn(idx, { variable_id: val ? Number(val) : null })}
+                        options={varOptions(varId)}
+                      />
+                      <SelectField
+                        label="Target Input"
+                        value={r.target}
+                        onChange={(val) => updIn(idx, { target: val })}
+                        options={targetOpts}
+                      />
+                      <div style={sectionNote}>
+                        Mapping: {varId ? varName(varId) : "Variable"} → {labelOf(inputOptions, r.target)}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    style={{ ...miniBtn, ...(canAddIn ? {} : miniBtnDisabled) }}
+                    disabled={!canAddIn}
+                    title={addTitle(canAddIn, "input", false)}
+                    onClick={addIn}
+                  >
+                    ＋ Add
+                  </button>
                 </div>
               </div>
             )}
@@ -182,51 +321,84 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                 disabled={!io}
                 onChange={(e) =>
                   e.target.checked
-                    ? updateOut({
-                        enabled: true,
-                        source,
-                        output: om.output || io.outputs[0]?.key,
-                      })
-                    : updateOut({ enabled: false })
+                    ? setOutRows(outRows)
+                    : update({ output_mapping: { ...om, enabled: false } })
                 }
               />
               Enable
             </label>
 
             {om.enabled && (
-              <div style={{ marginTop: 12 }}>
-                <SelectField
-                  label="Variable"
-                  value={outVarId}
-                  onChange={(val) => updateOut({ variable_id: val ? Number(val) : null })}
-                  options={varOptions(outVarId)}
-                />
-                <SelectField
-                  label="Source"
-                  value={source}
-                  onChange={(val) => updateOut({ source: val })}
-                  options={SOURCE_OPTIONS}
-                />
-                {source === "node_output" && (
-                  <SelectField
-                    label="Source Output"
-                    value={om.output || ""}
-                    onChange={(val) => updateOut({ output: val })}
-                    options={outputOptions}
-                  />
-                )}
-                {source === "static" && (
-                  <Field
-                    label="Value"
-                    value={om.static_value}
-                    onChange={(val) => updateOut({ static_value: val })}
-                    placeholder="Enter static value…"
-                  />
-                )}
-                <div style={sectionNote}>
-                  Mapping:{" "}
-                  {source === "static" ? "Static Value" : labelOf(outputOptions, om.output)} →{" "}
-                  {outVarId ? varName(outVarId) : "Variable"}
+              <div>
+                {outRows.map((r, idx) => {
+                  const varId = r.variable_id != null ? String(r.variable_id) : "";
+                  const usedElsewhere = outRows
+                    .filter((_, j) => j !== idx && outRows[j].variable_id != null)
+                    .map((x) => String(x.variable_id));
+                  return (
+                    <div key={`out-${outKey(r) || `blank-${idx}`}`} style={rowBox}>
+                      <div style={rowHead}>
+                        <span style={{ ...lbl, marginBottom: 0 }}>Mapping {idx + 1}</span>
+                        <button
+                          type="button"
+                          style={miniBtnDanger}
+                          title="Remove mapping"
+                          onClick={() => removeOut(idx)}
+                        >
+                          ✕ Delete
+                        </button>
+                      </div>
+                      <SelectField
+                        label="Variable"
+                        value={varId}
+                        onChange={(val) => updOut(idx, { variable_id: val ? Number(val) : null })}
+                        options={varOptions(varId, usedElsewhere)}
+                      />
+                      <SelectField
+                        label="Source"
+                        value={r.source}
+                        onChange={(val) => updOut(idx, { source: val })}
+                        options={SOURCE_OPTIONS}
+                      />
+                      {r.source === "node_output" && (
+                        <SelectField
+                          label="Source Output"
+                          value={r.output || ""}
+                          onChange={(val) => updOut(idx, { output: val })}
+                          options={outputOptions}
+                        />
+                      )}
+                      {r.source === "static" && (
+                        <Field
+                          label="Value"
+                          value={r.static_value}
+                          onChange={(val) => updOut(idx, { static_value: val })}
+                          placeholder="Enter static value…"
+                        />
+                      )}
+                      <div style={sectionNote}>
+                        Mapping:{" "}
+                        {r.source === "static" ? "Static Value" : labelOf(outputOptions, r.output)} →{" "}
+                        {varId ? varName(varId) : "Variable"}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    style={{ ...miniBtn, ...(canAddOut ? {} : miniBtnDisabled) }}
+                    disabled={!canAddOut}
+                    title={addTitle(
+                      canAddOut,
+                      "output",
+                      !!io && outRows.length < variables.length
+                    )}
+                    onClick={addOut}
+                  >
+                    ＋ Add
+                  </button>
                 </div>
               </div>
             )}

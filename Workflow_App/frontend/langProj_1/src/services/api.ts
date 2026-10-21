@@ -274,6 +274,7 @@ export const getNodeIO = async () => {
 
 export interface RunSummary {
   run_id: number;
+  run_number: number;
   flow_id: number;
   workflow_name: string;
   status: "passed" | "failed";
@@ -309,4 +310,22 @@ export const deleteRun = async (flowId: number, runId: number) => {
 export const deleteAllRuns = async (flowId: number) => {
   const res = await axios.delete(`${BASE_URL}/flows/${flowId}/runs`);
   return res.data as { message: string; deleted: number };
+};
+
+// ─── Type Converter (advanced) ────────────────────────────────────────────────
+
+export interface ConverterMeta {
+  types: string[];
+  conversions: string[];
+  methods: Record<string, string[]>;
+}
+
+export const getConverterMeta = async () => {
+  const res = await axios.get(`${BASE_URL}/converter/meta`);
+  return res.data as ConverterMeta;
+};
+
+export const detectConverterType = async (value: string) => {
+  const res = await axios.post(`${BASE_URL}/converter/detect`, { value });
+  return res.data as { type: string };
 };

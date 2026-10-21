@@ -7,7 +7,10 @@ export type NodeType =
   | "type_converter"
   | "output"
   | "rag_retrieve"
-  | "rag_generate";
+  | "rag_generate"
+  | "base64"
+  | "geo_temperature"
+  | "geo_location";
 
 export interface GraphNode {
   id: string;

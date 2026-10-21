@@ -72,6 +72,9 @@ function BotPage() {
         onSelectSession={store.selectSession}
         onSwitchBot={() => navigate("/")}
         onRename={store.rename}
+        onDeleteSession={store.removeSession}
+        onDeleteSessions={store.removeSessions}
+        onDeleteAll={store.removeAllSessions}
       />
       <ChatWindow
         bot={store.bot}

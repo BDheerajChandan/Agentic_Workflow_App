@@ -11,6 +11,7 @@ from app.routers.local_files_router import router as local_files_router
 from app.routers.bot_router import router as bot_router
 from app.routers.provider_router import router as provider_router
 from app.routers.variable_router import router as variable_router
+from app.routers.converter_router import router as converter_router
 from app import db
 
 
@@ -38,6 +39,7 @@ app.include_router(local_files_router)
 app.include_router(bot_router)
 app.include_router(provider_router)
 app.include_router(variable_router)
+app.include_router(converter_router)
 
 
 @app.get("/")

@@ -43,6 +43,10 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class DeleteSessionsRequest(BaseModel):
+    session_ids: list[str]
+
+
 def _to_text(value) -> str:
     if value is None:
         return ""
@@ -150,6 +154,28 @@ async def new_session(bot_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Bot not found.")
     return session
+
+
+@router.post("/{bot_id}/sessions/delete")
+async def delete_selected_sessions(bot_id: str, payload: DeleteSessionsRequest):
+    await _require_bot(bot_id)
+    ids = list({s for s in payload.session_ids if s})
+    if not ids:
+        raise HTTPException(status_code=400, detail="No chats selected.")
+    return {"deleted": await db.delete_sessions(bot_id, ids)}
+
+
+@router.delete("/{bot_id}/sessions")
+async def delete_all_sessions(bot_id: str):
+    await _require_bot(bot_id)
+    return {"deleted": await db.delete_all_sessions(bot_id)}
+
+
+@router.delete("/{bot_id}/sessions/{session_id}")
+async def delete_session(bot_id: str, session_id: str):
+    if not await db.delete_session(bot_id, session_id):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return {"message": "Chat deleted."}
 
 
 @router.get("/{bot_id}/history")

@@ -132,3 +132,28 @@ export const mappingBox = {
   marginTop: 12, padding: 10,
   border: "1px solid #1e293b", borderRadius: 8,
 };
+
+
+export const rowBox = {
+  marginTop: 10, padding: 10,
+  border: "1px solid #1e293b", borderRadius: 8,
+  background: "rgba(15,23,42,0.5)",
+};
+
+export const rowHead = {
+  display: "flex", justifyContent: "space-between", alignItems: "center",
+  marginBottom: 6,
+};
+
+export const miniBtn = {
+  padding: "4px 10px", borderRadius: 7,
+  border: "1px solid #1e293b", background: "#0f172a",
+  color: "#94a3b8", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
+};
+
+export const miniBtnDanger = {
+  ...miniBtn,
+  color: "#fca5a5", borderColor: "rgba(239,68,68,0.35)",
+};
+
+export const miniBtnDisabled = { opacity: 0.5, cursor: "not-allowed" };

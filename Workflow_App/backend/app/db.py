@@ -193,6 +193,20 @@ async def init_db() -> None:
         )
 
         await conn.execute(
+            "ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS run_number INTEGER;"
+        )
+        await conn.execute("""
+            UPDATE workflow_runs w
+            SET run_number = r.rn
+            FROM (
+                SELECT run_id,
+                       ROW_NUMBER() OVER (PARTITION BY flow_id ORDER BY run_id) AS rn
+                FROM workflow_runs
+            ) r
+            WHERE w.run_id = r.run_id AND w.run_number IS NULL;
+        """)
+
+        await conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_variables_private_name "
             "ON variables(flow_id, name) WHERE visibility = 'private';"
         )
@@ -769,29 +783,35 @@ async def record_run(
     duration_ms = max(0, int((ended_at - started_at).total_seconds() * 1000))
     pool = await get_pool()
     async with pool.acquire() as conn:
-        name = await conn.fetchval("SELECT name FROM flows WHERE id=$1", flow_id)
-        if name is None:
-            return None
-        return await conn.fetchval(
-            """
-            INSERT INTO workflow_runs
-                (flow_id, workflow_name, status, started_at, ended_at, duration_ms,
-                 input, result, node_states, variables, error)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING run_id
-            """,
-            flow_id, name, status, started_at, ended_at, duration_ms,
-            input_value, json.dumps(result), json.dumps(node_states or []),
-            json.dumps(variables or {}), error,
-        )
-
-
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT name FROM flows WHERE id=$1 FOR UPDATE", flow_id
+            )
+            if row is None:
+                return None
+            run_number = await conn.fetchval(
+                "SELECT COALESCE(MAX(run_number), 0) + 1 FROM workflow_runs WHERE flow_id=$1",
+                flow_id,
+            )
+            return await conn.fetchval(
+                """
+                INSERT INTO workflow_runs
+                    (flow_id, run_number, workflow_name, status, started_at, ended_at,
+                     duration_ms, input, result, node_states, variables, error)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                RETURNING run_id
+                """,
+                flow_id, run_number, row["name"], status, started_at, ended_at, duration_ms,
+                input_value, json.dumps(result), json.dumps(node_states or []),
+                json.dumps(variables or {}), error,
+            )
+        
 async def list_runs(flow_id: int, limit: int = 100) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT run_id, flow_id, workflow_name, status,
+            SELECT run_id, run_number, flow_id, workflow_name, status,
                    started_at, ended_at, duration_ms, error
             FROM workflow_runs
             WHERE flow_id=$1
@@ -836,3 +856,41 @@ async def delete_all_runs(flow_id: int) -> int:
             "DELETE FROM workflow_runs WHERE flow_id=$1", flow_id
         )
     return int(result.split()[-1])
+
+
+
+
+# ─── chat session deletion ────────────────────────────────────────────────────
+# chat_messages rows are removed automatically (ON DELETE CASCADE on session_id).
+
+def _deleted_count(result: str) -> int:
+    return int(result.split()[-1])
+
+
+async def delete_session(bot_id: str, session_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM chat_sessions WHERE bot_id=$1 AND session_id=$2",
+            bot_id, session_id,
+        )
+    return _deleted_count(result) > 0
+
+
+async def delete_sessions(bot_id: str, session_ids: list[str]) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM chat_sessions WHERE bot_id=$1 AND session_id = ANY($2::text[])",
+            bot_id, session_ids,
+        )
+    return _deleted_count(result)
+
+
+async def delete_all_sessions(bot_id: str) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM chat_sessions WHERE bot_id=$1", bot_id
+        )
+    return _deleted_count(result)
