@@ -18,6 +18,34 @@ class VariableError(Exception):
         self.message = message
         self.status_code = status_code
 
+def resolve_path(value: Any, path: str | None, name: str = "variable") -> Any:
+    """Traverse a dot-notation path (e.g. 'key_1.key_2') inside a dict/list value."""
+    if not path:
+        return value
+    current = value
+    walked: list[str] = []
+    for key in path.split("."):
+        trail = f"{name}" + "".join(f".{k}" for k in walked)
+        if isinstance(current, dict):
+            if key not in current:
+                raise VariableError(
+                    f"Cannot resolve '{name}.{path}': key '{key}' not found in '{trail}'."
+                )
+            current = current[key]
+        elif isinstance(current, list) and key.isdigit():
+            idx = int(key)
+            if idx >= len(current):
+                raise VariableError(
+                    f"Cannot resolve '{name}.{path}': index {idx} out of range in '{trail}'."
+                )
+            current = current[idx]
+        else:
+            raise VariableError(
+                f"Cannot resolve '{name}.{path}': '{trail}' is of type "
+                f"'{type(current).__name__}' and has no key '{key}'."
+            )
+        walked.append(key)
+    return current
 
 def _upgrade_legacy(cfg: dict, io: dict) -> dict:
     """Convert the old {mode, variable_id, source, static_value} shape to mappings."""
@@ -100,9 +128,13 @@ def _parse_input(mapping: dict, io: dict) -> list[dict]:
             raise VariableError(f"{label}: select a target input.")
         if target not in by_key:
             raise VariableError(f"{label}: input '{target}' does not exist on this node.")
+        path = str(binding.get("path") or "").strip()
+        if path and any(not seg for seg in path.split(".")):
+            raise VariableError(f"{label}: invalid path '{path}'.")
         parsed.append({
             "variable_id": _to_variable_id(binding.get("variable_id"), label),
             "target": target,
+            "path": path,
         })
 
     if len(parsed) > len(io["inputs"]):
@@ -211,14 +243,15 @@ class VariableRuntime:
         with self._lock:
             self._values[variable_id] = value
 
-    def read(self, variable_id: int) -> Any:
+    def read(self, variable_id: int, path: str | None = None) -> Any:
         d = self.definition(variable_id)
         with self._lock:
             if variable_id not in self._values:
                 raise VariableError(
                     f"Variable '{d['name']}' was read before it was assigned in this execution."
                 )
-            return self._values[variable_id]
+            value = self._values[variable_id]
+        return resolve_path(value, path, d["name"])
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:

@@ -77,14 +77,20 @@ function inputRows(m) {
     return orderedKeys(m.bindings, m.order).map((k) => ({
       target: k,
       variable_id: m.bindings[k]?.variable_id ?? null,
+      path: m.bindings[k]?.path ?? "",
     }));
   }
-  return [{ target: m?.target || "", variable_id: m?.variable_id ?? null }];
+  return [{ target: m?.target || "", variable_id: m?.variable_id ?? null, path: "" }];
 }
 
 const toInputMapping = (enabled, rows) => ({
   enabled,
-  bindings: Object.fromEntries(rows.map((r) => [r.target, { variable_id: r.variable_id }])),
+  bindings: Object.fromEntries(
+    rows.map((r) => [
+      r.target,
+      { variable_id: r.variable_id, ...(r.path && r.path.trim() ? { path: r.path.trim() } : {}) },
+    ])
+  ),
   order: rows.map((r) => r.target),
 });
 
@@ -283,6 +289,12 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                         onChange={(val) => updIn(idx, { variable_id: val ? Number(val) : null })}
                         options={varOptions(varId)}
                       />
+                      <Field
+                        label="Path (optional, dot notation)"
+                        value={r.path}
+                        onChange={(val) => updIn(idx, { path: val })}
+                        placeholder="e.g. data.current.temperature_c"
+                      />
                       <SelectField
                         label="Target Input"
                         value={r.target}
@@ -290,7 +302,8 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                         options={targetOpts}
                       />
                       <div style={sectionNote}>
-                        Mapping: {varId ? varName(varId) : "Variable"} → {labelOf(inputOptions, r.target)}
+                        Mapping: {varId ? varName(varId) : "Variable"}
+                        {r.path && r.path.trim() ? `.${r.path.trim()}` : ""} → {labelOf(inputOptions, r.target)}
                       </div>
                     </div>
                   );

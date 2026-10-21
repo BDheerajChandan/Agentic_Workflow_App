@@ -70,7 +70,9 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                                 raise VariableError(
                                     f"Input '{im['target']}' does not exist on node type '{node_type}'."
                                 )
-                            updates[target["state_key"]] = runtime.read(im["variable_id"])
+                            updates[target["state_key"]] = runtime.read(
+                                im["variable_id"], im.get("path")
+                            )
                             if target.get("transient"):
                                 transient_keys.add(target["state_key"])
                         run_state = {**state, **updates}
