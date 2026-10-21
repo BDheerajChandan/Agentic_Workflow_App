@@ -172,6 +172,10 @@ def _parse_output(mapping: dict, io: dict) -> list[dict]:
             if output not in outputs:
                 raise VariableError(f"{label}: output '{output}' does not exist on this node.")
             item["output"] = output
+            path = str(binding.get("path") or "").strip()
+            if path and any(not seg for seg in path.split(".")):
+                raise VariableError(f"{label}: invalid path '{path}'.")
+            item["path"] = path
         parsed.append(item)
 
     ids = [p["variable_id"] for p in parsed]

@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph, END
 from app.graph.state import GraphState
 from app.nodes.io_schema import find_input, find_output, primary_value
 from app.nodes.registry import NODE_REGISTRY
-from app.variables import VariableError, VariableRuntime, parse_variable_config
+from app.variables import VariableError, VariableRuntime, parse_variable_config, resolve_path
 
 
 def _safe(obj):
@@ -99,6 +99,7 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                                     raise VariableError(
                                         f"Output '{source['label']}' produced no value to store."
                                     )
+                                value = resolve_path(value, om.get("path"), source["label"])
                             runtime.assign(om["variable_id"], value)
 
                     snapshot = runtime.snapshot()

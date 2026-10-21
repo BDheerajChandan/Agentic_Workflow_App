@@ -102,6 +102,7 @@ function outputRows(m) {
         variable_id: k === "" ? null : Number(k),
         source: b.source || "node_output",
         output: b.output,
+        path: b.path ?? "",
         static_value: b.static_value,
       };
     });
@@ -110,6 +111,7 @@ function outputRows(m) {
     variable_id: m?.variable_id ?? null,
     source: m?.source || "node_output",
     output: m?.output,
+    path: "",
     static_value: m?.static_value,
   }];
 }
@@ -123,7 +125,11 @@ const toOutputMapping = (enabled, rows) => ({
       outKey(r),
       r.source === "static"
         ? { source: "static", static_value: r.static_value ?? "" }
-        : { source: "node_output", output: r.output },
+        : {
+            source: "node_output",
+            output: r.output,
+            ...(r.path && r.path.trim() ? { path: r.path.trim() } : {}),
+          }
     ])
   ),
   order: rows.map(outKey),
@@ -381,6 +387,14 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                           options={outputOptions}
                         />
                       )}
+                      {r.source === "node_output" && (
+                        <Field
+                          label="Path (optional, dot notation)"
+                          value={r.path}
+                          onChange={(val) => updOut(idx, { path: val })}
+                          placeholder="e.g. data.current.temperature_c"
+                        />
+                      )}
                       {r.source === "static" && (
                         <Field
                           label="Value"
@@ -391,7 +405,10 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                       )}
                       <div style={sectionNote}>
                         Mapping:{" "}
-                        {r.source === "static" ? "Static Value" : labelOf(outputOptions, r.output)} →{" "}
+                        {r.source === "static"
+                          ? "Static Value"
+                          : `${labelOf(outputOptions, r.output)}${r.path && r.path.trim() ? `.${r.path.trim()}` : ""}`}{" "}
+                        →{" "}
                         {varId ? varName(varId) : "Variable"}
                       </div>
                     </div>
