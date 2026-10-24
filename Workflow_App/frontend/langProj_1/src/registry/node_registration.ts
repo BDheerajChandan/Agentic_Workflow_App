@@ -12,6 +12,7 @@ import GeoLocationNode from "../nodes/geo_location/GeoLocationNode.jsx";
 import PythonFunctionsNode from "../nodes/python_functions/PythonFunctionsNode.jsx";
 import TimeOperationNode from "../nodes/time_operation/TimeOperationNode.jsx";
 import HitlNode from "../nodes/hitl/HitlNode.jsx";
+import FileReaderNode from "../nodes/file_reader/FileReaderNode.jsx";
 
 import StartSettings from "./settings/startSettings.jsx";
 import TypeConverterSettings from "./settings/typeConverterSettings.jsx";
@@ -24,6 +25,7 @@ import GeoLocationSettings from "./settings/geoLocationSettings.jsx";
 import PythonFunctionsSettings from "./settings/pythonFunctionsSettings.jsx";
 import TimeOperationSettings from "./settings/timeOperationSettings.jsx";
 import HitlSettings from "./settings/hitlSettings.jsx";
+import FileReaderSettings from "./settings/fileReaderSettings.jsx";
 
 export const nodeTypes = {
   start: StartNode,
@@ -39,6 +41,7 @@ export const nodeTypes = {
   python_functions: PythonFunctionsNode,
   time_operation: TimeOperationNode,
   hitl: HitlNode,
+  file_reader: FileReaderNode,
 };
 
 export const settingsRegistry: Record<string, any> = {
@@ -55,6 +58,7 @@ export const settingsRegistry: Record<string, any> = {
   python_functions: PythonFunctionsSettings,
   time_operation: TimeOperationSettings,
   hitl: HitlSettings,
+  file_reader: FileReaderSettings,
 };
 
 
@@ -72,6 +76,7 @@ export const variableCapableNodes = new Set<string>([
   "python_functions",
   "time_operation",
   "hitl",
+  "file_reader",
 ]);
 
 // Default node.data applied when a node is dropped on the canvas.
@@ -115,6 +120,7 @@ export const nodeDefaults: Record<string, Record<string, any>> = {
     hold_on_timeout: "fail",
     max_wait_seconds: 86400,
   },
+  file_reader: { include_results: true },
   hitl: {
     feature: "approval",
     approval: { instructions: "" },
@@ -130,5 +136,6 @@ export const extraSidebarNodes = [
   { type: "geo_location",    label: "Geo Location",    icon: "📍", color: "#2dd4bf", bg: "rgba(45,212,191,0.08)", border: "rgba(45,212,191,0.3)", desc: "Address to coordinates" },
   { type: "python_functions", label: "Python Functions", icon: "🐍", color: "#4ade80", bg: "rgba(74,222,128,0.08)", border: "rgba(74,222,128,0.3)", desc: "Run sandboxed Python" },
   { type: "time_operation",   label: "Time Operation",   icon: "⏱", color: "#f472b6", bg: "rgba(244,114,182,0.08)", border: "rgba(244,114,182,0.3)", desc: "Wait / schedule / hold" },
+  { type: "file_reader",      label: "File Reader",      icon: "📄", color: "#22d3ee", bg: "rgba(34,211,238,0.08)",  border: "rgba(34,211,238,0.3)",  desc: "Extract file content" },
   { type: "hitl",             label: "HITL",             icon: "🙋", color: "#fbbf24", bg: "rgba(251,191,36,0.08)",  border: "rgba(251,191,36,0.3)",  desc: "Approval / suggestion / questions" },
 ];

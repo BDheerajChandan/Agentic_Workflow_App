@@ -5,7 +5,7 @@ import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import { shortId } from "../utils/ids";
 
-export default function ChatWindow({ bot, session, messages, loading, onSend }) {
+export default function ChatWindow({ bot, session, messages, loading, onSend, onRespond }) {
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export default function ChatWindow({ bot, session, messages, loading, onSend }) 
           return (
             <React.Fragment key={m.id}>
               {showDate && <div className="date-sep">{d}</div>}
-              <MessageBubble message={m} />
+              <MessageBubble message={m} onRespond={onRespond} />
             </React.Fragment>
           );
         })}
@@ -50,7 +50,13 @@ export default function ChatWindow({ bot, session, messages, loading, onSend }) 
         <div ref={endRef} />
       </div>
 
-      <MessageInput onSend={onSend} disabled={loading || !session} loading={loading} />
+      <MessageInput
+        onSend={onSend}
+        disabled={loading || !session}
+        loading={loading}
+        botId={bot.bot_id}
+        sessionId={session?.session_id}
+      />
     </main>
   );
 }

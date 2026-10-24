@@ -15,6 +15,7 @@ from app.nodes.geo_location import geo_location_node
 from app.nodes.python_functions import python_functions_node
 from app.nodes.time_operation import time_operation_node
 from app.nodes.HILT_Node import hitl_node
+from app.nodes.file_reader import file_reader_node
 
 NODE_REGISTRY = {
     "start": start_node,
@@ -32,4 +33,5 @@ NODE_REGISTRY = {
     "python_functions": python_functions_node,
     "time_operation": time_operation_node,
     "hitl": hitl_node,
+    "file_reader": file_reader_node,
 }

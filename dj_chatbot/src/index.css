@@ -254,3 +254,9 @@ a.btn { text-decoration: none; display: inline-block; }
   gap: 14px; padding: 20px 0 6px;
 }
 .open-bot-empty-text { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+
+/* ── Attachments / HITL cards ────────────────────────────── */
+.input-area { border-top: 1px solid #1e293b; background: #0a0f1e; }
+.input-area .input-bar { border-top: none; align-items: stretch; }
+.bubble-card { max-width: 560px; width: 100%; padding: 0; background: transparent; border: none; }
+.bubble-files { margin-top: 6px; font-size: 11px; opacity: 0.85; }

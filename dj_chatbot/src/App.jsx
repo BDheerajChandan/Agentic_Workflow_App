@@ -82,6 +82,7 @@ function BotPage() {
         messages={store.messages}
         loading={store.loading}
         onSend={store.send}
+        onRespond={store.respond}
       />
     </div>
   );

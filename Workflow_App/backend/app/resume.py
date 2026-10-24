@@ -43,6 +43,19 @@ async def store_pause(exc: PauseRequested, flow_id: int, nodes: list, edges: lis
     )
 
 
+def build_interaction(hitl: dict, pause_id: int) -> dict:
+    return {
+        "type": "hitl",
+        "interaction_type": hitl.get("feature"),
+        "status": "pending",
+        "interaction_id": str(pause_id),
+        "pause_id": pause_id,
+        "node_id": hitl.get("node_id"),
+        "title": hitl.get("title"),
+        "payload": {k: hitl.get(k) for k in ("input", "instructions", "required", "questions") if k in hitl},
+    }
+
+
 def paused_result(exc: PauseRequested, pause_id: int) -> dict:
     hitl = (exc.info or {}).get("hitl")
     if hitl:
@@ -63,6 +76,7 @@ def paused_result(exc: PauseRequested, pause_id: int) -> dict:
     }
     if hitl:
         out["hitl"] = {**hitl, "pause_id": pause_id}
+        out["interaction"] = build_interaction(hitl, pause_id)
     return out
 
 

@@ -15,6 +15,9 @@ class GraphState(TypedDict, total=False):
 
     final_output: Any
 
+    # uploaded file references (public records: file_id, file_name, ...)
+    files: Any
+    
     # execution-scoped runtime variables (name -> value)
     variables: Dict[str, Any]
 

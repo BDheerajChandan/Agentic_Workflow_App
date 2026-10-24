@@ -1,7 +1,7 @@
 // src/services/botApi.js
 // Thin client for the lclg_project backend (source of truth for bots, sessions, messages).
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8001";
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8001";
 const TIMEOUT_MS = 120000;
 
 export class BotError extends Error {
@@ -76,12 +76,20 @@ export const getMessages = (botId, sessionId) =>
     `/bots/${encodeURIComponent(botId)}/sessions/${encodeURIComponent(sessionId)}/messages`
   );
 
-export const sendChat = (botId, sessionId, message) =>
+export const sendChat = (botId, sessionId, message, files = []) =>
   request(
     `/bots/${encodeURIComponent(botId)}/sessions/${encodeURIComponent(sessionId)}/chat`,
-    { method: "POST", body: JSON.stringify({ message }) }
+    {
+      method: "POST",
+      body: JSON.stringify({ message, files: files.map((f) => ({ file_id: f.file_id })) }),
+    }
   );
 
+export const submitInteraction = (botId, sessionId, pauseId, payload) =>
+  request(
+    `/bots/${encodeURIComponent(botId)}/sessions/${encodeURIComponent(sessionId)}/interactions/${pauseId}/submit`,
+    { method: "POST", body: JSON.stringify(payload) }
+  );
 
 // add alongside the existing exports
 

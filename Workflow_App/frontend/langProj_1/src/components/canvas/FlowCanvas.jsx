@@ -12,7 +12,10 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-import { runGraphStream, saveFlow, getFlowByRoute, submitHitl } from "../../services/api";
+import { useNavigate } from "react-router-dom";
+import {
+  runGraphStream, saveFlow, getFlowByRoute, submitHitl, createFlow, deleteFlow,
+} from "../../services/api";
 import HitlModal from "../hitl/HitlModal";
 import PlaygroundPanel from "../playground/PlaygroundPanel";
 import CreateVariableModal from "../CreateVariableModal";
@@ -87,6 +90,9 @@ function FlowCanvas({ routeSlug, onBack }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [hitlPrompt, setHitlPrompt] = useState(null);
+  const navigate = useNavigate();
+  const [importDialog, setImportDialog] = useState(null);
+  const [importBusy, setImportBusy] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [transferMsg, setTransferMsg] = useState(null);
   const optionsRef = useRef(null);
@@ -231,38 +237,57 @@ function FlowCanvas({ routeSlug, onBack }) {
     }
   };
 
-    // ── Human-in-the-loop: open the popup for a paused run, resume on submit ──
-  const askHuman = (request) =>
-    new Promise((resolve, reject) => {
-      setHitlPrompt({
-        request,
-        submit: async (response) => {
-          const outcome = await submitHitl(request.pause_id, { response });
-          setHitlPrompt(null);
-          resolve(outcome);
-        },
-        cancel: async () => {
-          try {
-            await submitHitl(request.pause_id, { cancelled: true });
-          } catch {
-            /* ignore */
-          }
-          setHitlPrompt(null);
-          reject(new Error("HITL interaction cancelled by user."));
-        },
-      });
+  // ── Human-in-the-loop ─────────────────────────────────────────────────────
+  // `present` decides where the card is shown (Run popup or Playground chat).
+  const presentModal = ({ interaction, submit, cancel }) =>
+    setHitlPrompt({
+      request: interaction,
+      submit: async (response) => {
+        await submit(response);
+        setHitlPrompt(null);
+      },
+      cancel: async () => {
+        await cancel();
+        setHitlPrompt(null);
+      },
     });
 
-  const completeHitl = async (first) => {
+  const completeHitl = async (first, present) => {
     let current = first;
     let display;
-    while (current?.paused && current?.hitl) {
-      const outcome = await askHuman(current.hitl);
+    while (current?.paused && current?.interaction) {
+      const interaction = current.interaction;
+      const outcome = await new Promise((resolve, reject) => {
+        present({
+          interaction,
+          submit: async (response) => {
+            resolve(await submitHitl(interaction.pause_id, { response }));
+          },
+          cancel: async () => {
+            try {
+              await submitHitl(interaction.pause_id, { cancelled: true });
+            } catch {
+              /* ignore */
+            }
+            reject(new Error("HITL interaction cancelled by user."));
+          },
+        });
+      });
       if (outcome.error) throw new Error(outcome.error);
       current = outcome.result;
       display = outcome.display ?? undefined;
     }
     return { result: current, display };
+  };
+
+  const collectFiles = (extra = []) => {
+    const seen = new Set();
+    return [
+      ...nodes.filter((n) => n.type === "start").flatMap((n) => n.data?.files || []),
+      ...extra,
+    ]
+      .filter((f) => f?.file_id && !seen.has(f.file_id) && seen.add(f.file_id))
+      .map((f) => ({ file_id: f.file_id }));
   };
 
   // ── Run (SSE-driven execution highlighting) ───────────────────────────────
@@ -278,7 +303,7 @@ function FlowCanvas({ routeSlug, onBack }) {
     let display;
     try {
       const result = await runGraphStream(
-        { nodes, edges, input, flow_id: flowId },
+        { nodes, edges, input, flow_id: flowId, files: collectFiles() },
         (evt) => {
           if (evt.type === "result" && evt.display !== undefined) display = evt.display;
           if (evt.type === "node") {
@@ -294,7 +319,7 @@ function FlowCanvas({ routeSlug, onBack }) {
           }
         }
       );
-      const done = await completeHitl(result?.result ?? result);
+      const done = await completeHitl(result?.result ?? result, presentModal);
       setOutput(
         await buildOutputDisplay({
           nodes,
@@ -312,14 +337,20 @@ function FlowCanvas({ routeSlug, onBack }) {
     }
   };
 
-    const handleExportFlow = async () => {
+  const handleExportFlow = async () => {
     setOptionsOpen(false);
     setTransferMsg(null);
     try {
       const doc = await buildExport({ flowName, input, nodes, edges, flowId });
       const base = (flowName || "workflow").trim().replace(/[^\w.-]+/g, "_") || "workflow";
       downloadJson(`${base}_export.json`, doc);
-      setTransferMsg({ ok: true, text: "✓ Flow exported" });
+      const n = doc.file_references.length;
+      setTransferMsg({
+        ok: true,
+        text: n
+          ? `✓ Flow exported. ${n} attached file(s) are exported as references only; file contents are not included.`
+          : "✓ Flow exported",
+      });
     } catch (err) {
       setTransferMsg({ ok: false, text: `Export failed: ${err?.message || err}` });
     }
@@ -333,39 +364,74 @@ function FlowCanvas({ routeSlug, onBack }) {
     try {
       if (!file.name.toLowerCase().endsWith(".json")) throw new Error("Only .json files are supported.");
       const payload = parseImport(await file.text());
-      if (
-        (nodes.length > 0 || edges.length > 0) &&
-        !window.confirm("Importing replaces the current canvas. Unsaved changes will be lost. Continue?")
-      ) {
-        return;
-      }
-      const prepared = await prepareImport(payload, flowId);
-
-      setNodes(prepared.nodes);
-      setEdges(prepared.edges);
-      setInput(prepared.input_value);
-      setFlowName(prepared.name);
-      setOutput(null);
-      setError(null);
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
-      setSettingsOpen(false);
-      setRunningNodeId(null);
-      setCompletedNodeIds(new Set());
-      setNodeTraces([]);
-      setVariablesVersion((v) => v + 1);
-
-      let maxId = 0;
-      prepared.nodes.forEach((n) => {
-        const num = parseInt(String(n.id).replace("node_", ""), 10);
-        if (!isNaN(num) && num > maxId) maxId = num;
-      });
-      _id = maxId + 1;
-
-      setTransferMsg({ ok: true, text: `✓ Imported ${prepared.nodes.length} node(s). Click Save to keep it.` });
-      setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 150);
+      setImportDialog({ payload, fileName: file.name });
     } catch (err) {
       setTransferMsg({ ok: false, text: `Import failed: ${err?.message || err}` });
+    }
+  };
+
+  const applyReplace = async (payload) => {
+    const prepared = await prepareImport(payload, flowId);
+
+    setNodes(prepared.nodes);
+    setEdges(prepared.edges);
+    setInput(prepared.input_value);
+    setFlowName(prepared.name);
+    setOutput(null);
+    setError(null);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setSettingsOpen(false);
+    setRunningNodeId(null);
+    setCompletedNodeIds(new Set());
+    setNodeTraces([]);
+    setVariablesVersion((v) => v + 1);
+
+    let maxId = 0;
+    prepared.nodes.forEach((n) => {
+      const num = parseInt(String(n.id).replace("node_", ""), 10);
+      if (!isNaN(num) && num > maxId) maxId = num;
+    });
+    _id = maxId + 1;
+
+    const warn = prepared.warnings.length ? ` Warnings: ${prepared.warnings.join(" ")}` : "";
+    setTransferMsg({
+      ok: true,
+      text: `✓ Imported ${prepared.nodes.length} node(s). Click Save to keep it.${warn}`,
+    });
+    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 150);
+  };
+
+  const applyNew = async (payload) => {
+    const created = await createFlow(payload.name);
+    try {
+      const prepared = await prepareImport(payload, created.flow_id);
+      await saveFlow({
+        flow_id: created.flow_id,
+        name: prepared.name,
+        nodes: prepared.nodes,
+        edges: prepared.edges,
+        input_value: prepared.input_value,
+      });
+    } catch (err) {
+      await deleteFlow(created.flow_id).catch(() => {});
+      throw err;
+    }
+    navigate(`/flow/${created.route_slug}`);
+  };
+
+  const confirmImport = async (mode) => {
+    if (!importDialog || importBusy) return;
+    setImportBusy(true);
+    try {
+      if (mode === "replace") await applyReplace(importDialog.payload);
+      else await applyNew(importDialog.payload);
+      setImportDialog(null);
+    } catch (err) {
+      setImportDialog(null);
+      setTransferMsg({ ok: false, text: `Import failed: ${err?.message || err}` });
+    } finally {
+      setImportBusy(false);
     }
   };
 
@@ -538,8 +604,10 @@ function FlowCanvas({ routeSlug, onBack }) {
                     color: optionsOpen ? "#818cf8" : "#94a3b8",
                   }}
                   onClick={() => setOptionsOpen((o) => !o)}
+                  title="Menu"
+                  aria-label="Menu"
                 >
-                  Options ▾
+                  ☰
                 </button>
                 {optionsOpen && (
                   <div style={styles.optionsMenu}>
@@ -547,10 +615,10 @@ function FlowCanvas({ routeSlug, onBack }) {
                       style={styles.optionsItem}
                       onClick={() => { setOptionsOpen(false); importFileRef.current?.click(); }}
                     >
-                      ⬆ Import Flow
+                      Import Flow
                     </button>
                     <button style={styles.optionsItem} onClick={handleExportFlow}>
-                      ⬇ Export Flow
+                      Export Flow
                     </button>
                   </div>
                 )}
@@ -696,16 +764,17 @@ function FlowCanvas({ routeSlug, onBack }) {
                 {playgroundOpen && (
           <div ref={playgroundRef} style={styles.playgroundWrapper}>
             <PlaygroundPanel
+              flowId={flowId}
               output={output}
               loading={running}
               onClose={() => setPlaygroundOpen(false)}
-              onSend={async (message) => {
+              onSend={async (message, files, present) => {
                 setRunningNodeId(null);
                 setCompletedNodeIds(new Set());
                 const traces = [];
                 let display;
                 const result = await runGraphStream(
-                  { nodes, edges, input: message, flow_id: flowId },
+                  { nodes, edges, input: message, flow_id: flowId, files: collectFiles(files) },
                   (evt) => {
                     if (evt.type === "result" && evt.display !== undefined) display = evt.display;
                     if (evt.type === "node") {
@@ -719,7 +788,7 @@ function FlowCanvas({ routeSlug, onBack }) {
                     }
                   }
                 );
-                const done = await completeHitl(result?.result ?? result);
+                const done = await completeHitl(result?.result ?? result, present);
                 setRunningNodeId(null);
                 return buildOutputDisplay({
                   nodes,
@@ -755,6 +824,43 @@ function FlowCanvas({ routeSlug, onBack }) {
                 }}
               >
                 Yes, Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importDialog && (
+        <div style={styles.confirmOverlay} onClick={() => !importBusy && setImportDialog(null)}>
+          <div style={styles.confirmPanel} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.confirmTitle}>Import Flow</div>
+            <div style={styles.confirmText}>
+              “{importDialog.payload.name}” · {importDialog.payload.nodes.length} node(s) ·{" "}
+              {importDialog.payload.edges.length} edge(s) ({importDialog.fileName}).
+              <br /><br />
+              Replace the current canvas (unsaved changes are lost), or create it as a new flow?
+            </div>
+            <div style={styles.confirmActions}>
+              <button
+                style={styles.confirmCancel}
+                disabled={importBusy}
+                onClick={() => setImportDialog(null)}
+              >
+                Cancel
+              </button>
+              <button
+                style={styles.confirmCancel}
+                disabled={importBusy}
+                onClick={() => confirmImport("new")}
+              >
+                Create New Flow
+              </button>
+              <button
+                style={styles.confirmDelete}
+                disabled={importBusy}
+                onClick={() => confirmImport("replace")}
+              >
+                {importBusy ? "Importing…" : "Replace Current"}
               </button>
             </div>
           </div>
@@ -943,16 +1049,28 @@ const styles = {
   },
   logoRow: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
   optionsBtn: {
-    padding: "3px 8px", borderRadius: 7, border: "1px solid #334155",
-    background: "transparent", fontSize: 11, fontWeight: 600,
+    padding: "2px 8px", borderRadius: 7, border: "1px solid #334155",
+    background: "transparent", fontSize: 15, lineHeight: 1, fontWeight: 600,
     cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit",
   },
-  optionsMenu: {
-    position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 140,
-    background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8,
-    padding: 4, display: "flex", flexDirection: "column", gap: 2,
-    boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 2000,
-  },
+
+  
+optionsMenu: {
+  position: "fixed", 
+  top: 40,
+  left: 160,
+  minWidth: 140,
+  background: "#0f172a",
+  border: "1px solid #1e293b",
+  borderRadius: 8,
+  padding: 4,
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+  boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+  zIndex: 99999,
+},
+
   optionsItem: {
     padding: "7px 10px", borderRadius: 6, border: "none", background: "transparent",
     color: "#cbd5e1", fontSize: 12, textAlign: "left", cursor: "pointer",

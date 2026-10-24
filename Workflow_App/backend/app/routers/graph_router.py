@@ -21,6 +21,8 @@ from app.resume import paused_result, store_pause
 from app.schemas.graph_schema import GraphRequest
 from app.variables import VariableError
 from app import db
+from app.database import file_repository
+from app.files.registry import FileError
 
 router = APIRouter()
 
@@ -30,6 +32,16 @@ SAVE_FIRST = "Hold / long waits require a saved workflow."
 class GraphRunRequest(GraphRequest):
     """Extends GraphRequest with optional flow_id for persistence."""
     flow_id: int | None = None
+    files: list[dict[str, Any]] | None = None
+
+
+async def _file_state(files) -> dict:
+    if not files:
+        return {}
+    try:
+        return {"files": await file_repository.resolve_public(files)}
+    except FileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 def _plain(payload: GraphRunRequest):
@@ -41,6 +53,7 @@ def _plain(payload: GraphRunRequest):
 
 @router.post("/run")
 async def run_graph(payload: GraphRunRequest):
+    file_state = await _file_state(payload.files)
     try:
         defs = await db.list_variables()
         graph = build_graph(
@@ -50,7 +63,7 @@ async def run_graph(payload: GraphRunRequest):
 
         result = await asyncio.to_thread(
             graph.invoke,
-            {"input": payload.input, "data": {}},
+            {"input": payload.input, "data": {}, **file_state},
         )
     except VariableError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
@@ -88,6 +101,7 @@ def _run_variables(final_result: dict | None, traces: list[dict]) -> dict:
 
 @router.post("/run-stream")
 async def run_graph_stream(payload: GraphRunRequest):
+    file_state = await _file_state(payload.files)
     events: "queue.Queue[dict]" = queue.Queue()
     loop = asyncio.get_event_loop()
     defs = await db.list_variables()
@@ -104,7 +118,7 @@ async def run_graph_stream(payload: GraphRunRequest):
                 event_callback=event_callback,
                 variable_defs=defs, flow_id=payload.flow_id,
             )
-            result = graph.invoke({"input": payload.input, "data": {}})
+            result = graph.invoke({"input": payload.input, "data": {}, **file_state})
             events.put({"type": "result", "result": _serialise(result)})
         except PauseRequested as exc:
             pause_box["exc"] = exc

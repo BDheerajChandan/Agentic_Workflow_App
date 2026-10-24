@@ -101,21 +101,24 @@ export function useBot(botId, sessionParam, onSessionChange) {
     setBot(updated);
   };
 
-  const send = async (text) => {
+  const send = async (text, files = []) => {
     const sid = sessionParam;
     if (!sid || pending.has(sid)) return;
 
     const tmp = {
       id: `tmp-${Date.now()}`,
       role: "user",
-      content: text,
+      content: text || files.map((f) => f.file_name).join(", "),
+      meta: files.length
+        ? { files: files.map((f) => ({ file_id: f.file_id, file_name: f.file_name, size_bytes: f.size_bytes })) }
+        : null,
       created_at: new Date().toISOString(),
     };
     setMessages((m) => [...m, tmp]);
     setPending((p) => new Set(p).add(sid));
 
     try {
-      const res = await api.sendChat(botId, sid, text);
+      const res = await api.sendChat(botId, sid, text, files);
       if (activeRef.current === sid) {
         setMessages((m) => [...m.filter((x) => x.id !== tmp.id), ...res.messages]);
       }
@@ -130,6 +133,33 @@ export function useBot(botId, sessionParam, onSessionChange) {
             content: err?.userMessage || "Something went wrong. Please try again.",
             created_at: new Date().toISOString(),
           },
+        ]);
+      }
+    } finally {
+      setPending((p) => {
+        const next = new Set(p);
+        next.delete(sid);
+        return next;
+      });
+      refreshSessions();
+    }
+  };
+
+  // Submit / cancel a pending HITL card. Throws on validation errors so the card can show them.
+  const respond = async (pauseId, payload) => {
+    const sid = sessionParam;
+    if (!sid) return;
+    setPending((p) => new Set(p).add(sid));
+    try {
+      const res = await api.submitInteraction(botId, sid, pauseId, payload);
+      if (activeRef.current === sid) {
+        setMessages((m) => [
+          ...m.map((x) =>
+            x.meta?.interaction?.pause_id === pauseId
+              ? { ...x, meta: { ...x.meta, interaction: { ...x.meta.interaction, status: res.status } } }
+              : x
+          ),
+          ...res.messages,
         ]);
       }
     } finally {
@@ -186,6 +216,7 @@ export function useBot(botId, sessionParam, onSessionChange) {
     selectSession,
     rename,
     send,
+    respond,
     removeSession,
     removeSessions,
     removeAllSessions,

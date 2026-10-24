@@ -3,7 +3,7 @@
 import axios from "axios";
 import { GraphPayload } from "../types/graph";
 
-const BASE_URL = "http://localhost:8001";
+export const BASE_URL = "http://localhost:8001";
 
 // ─── Graph execution ──────────────────────────────────────────────────────────
 

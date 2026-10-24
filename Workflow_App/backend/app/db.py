@@ -150,6 +150,7 @@ async def init_db() -> None:
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, seq);"
         )
+        await conn.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS meta JSONB;")
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS variables (
@@ -606,14 +607,19 @@ async def get_messages(bot_id: str, session_id: str) -> list[dict]:
         rows = await conn.fetch(
             """
             SELECT id, session_id, thread_id, bot_id, flow_id, seq, role, content,
-                   chat_date, chat_time, created_at, updated_at
+                   chat_date, chat_time, created_at, updated_at, meta
             FROM chat_messages
             WHERE session_id=$1 AND bot_id=$2
             ORDER BY seq ASC
             """,
             session_id, bot_id,
         )
-    return [_jsonable(r) for r in rows]
+    out = []
+    for r in rows:
+        d = _jsonable(r)
+        d["meta"] = _json_field(d.get("meta"))
+        out.append(d)
+    return out
 
 
 async def add_messages(bot_id: str, session_id: str, messages: list[dict]) -> list[dict] | None:
@@ -639,14 +645,17 @@ async def add_messages(bot_id: str, session_id: str, messages: list[dict]) -> li
                 row = await conn.fetchrow(
                     """
                     INSERT INTO chat_messages
-                        (session_id, thread_id, bot_id, flow_id, seq, role, content)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        (session_id, thread_id, bot_id, flow_id, seq, role, content, meta)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     RETURNING id, session_id, thread_id, bot_id, flow_id, seq, role, content,
-                              chat_date, chat_time, created_at, updated_at
+                              chat_date, chat_time, created_at, updated_at, meta
                     """,
                     session_id, sess["thread_id"], bot_id, flow_id, seq, m["role"], m["content"],
+                    json.dumps(m["meta"]) if m.get("meta") else None,
                 )
-                saved.append(_jsonable(row))
+                d = _jsonable(row)
+                d["meta"] = _json_field(d.get("meta"))
+                saved.append(d)
 
             first_user = next((m["content"] for m in messages if m["role"] == "user"), None)
             title = sess["title"]
@@ -1108,3 +1117,30 @@ async def list_pending_hitl(flow_id: int) -> list[dict]:
             "request": {**request, "pause_id": r["pause_id"]},
         })
     return out
+
+async def get_interaction_message(bot_id: str, session_id: str, pause_id: int) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, meta FROM chat_messages
+            WHERE bot_id=$1 AND session_id=$2
+              AND meta->'interaction'->>'pause_id' = $3
+            ORDER BY id DESC LIMIT 1
+            """,
+            bot_id, session_id, str(pause_id),
+        )
+    return {"id": row["id"], "meta": _json_field(row["meta"])} if row else None
+
+
+async def set_interaction_status(pause_id: int, status: str) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE chat_messages
+            SET meta = jsonb_set(meta, '{interaction,status}', to_jsonb($1::text))
+            WHERE meta->'interaction'->>'pause_id' = $2
+            """,
+            status, str(pause_id),
+        )

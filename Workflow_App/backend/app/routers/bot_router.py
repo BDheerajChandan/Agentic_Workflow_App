@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -13,6 +13,11 @@ from app.graph.builder import build_graph
 from app.output_display import display_mode, render_reply, resolve_output_display
 from app.routers.graph_router import _serialise
 from app.schemas.graph_schema import Edge, Node
+from app.database import file_repository
+from app.files.registry import FileError
+from app.hitl_service import submit_interaction
+from app.pause import PauseRequested
+from app.resume import paused_result, store_pause
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -41,7 +46,13 @@ class SaveMessagesRequest(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = ""
+    files: list[dict[str, Any]] | None = None
+
+
+class InteractionSubmitRequest(BaseModel):
+    response: dict[str, Any] = {}
+    cancelled: bool = False
 
 
 class DeleteSessionsRequest(BaseModel):
@@ -207,10 +218,55 @@ async def save_messages(bot_id: str, session_id: str, payload: SaveMessagesReque
 
 # ─── Chat execution ───────────────────────────────────────────────────────────
 
+def _file_meta(files: list[dict]) -> list[dict]:
+    return [
+        {"file_id": f["file_id"], "file_name": f["file_name"], "size_bytes": f["size_bytes"]}
+        for f in files
+    ]
+
+
+def _reply_for(nodes, result, display) -> str:
+    serial = _serialise(result)
+    if display_mode(nodes) == "entire" or display is None:
+        return _extract_reply(serial)
+    return render_reply(display)
+
+
+def _interaction_message(interaction: dict, bot_id: str, session_id: str) -> dict:
+    card = {**interaction, "bot_id": bot_id, "session_id": session_id}
+    return {
+        "role": "bot",
+        "content": f"{card.get('title') or 'Input'} required: waiting for your response.",
+        "meta": {"interaction": card},
+    }
+
+
+async def _paused_response(bot, session, flow, exc, user_msg, input_value):
+    bot_id, session_id = bot["bot_id"], session["session_id"]
+    pause_id = await store_pause(exc, bot["flow_id"], flow["nodes"], flow["edges"], input_value)
+    paused = paused_result(exc, pause_id)
+    interaction = paused.get("interaction")
+    bot_msg = (
+        _interaction_message(interaction, bot_id, session_id)
+        if interaction
+        else {"role": "bot", "content": paused["message"]}
+    )
+    saved = await db.add_messages(bot_id, session_id, [user_msg, bot_msg])
+    return {
+        "bot_id": bot_id,
+        "session_id": session_id,
+        "thread_id": session["thread_id"],
+        "workflow_id": bot["flow_id"],
+        "reply": bot_msg["content"],
+        "interaction": bot_msg.get("meta", {}).get("interaction"),
+        "messages": saved,
+    }
+
+
 @router.post("/{bot_id}/sessions/{session_id}/chat")
 async def chat(bot_id: str, session_id: str, payload: ChatRequest):
     message = payload.message.strip()
-    if not message:
+    if not message and not payload.files:
         raise HTTPException(status_code=400, detail="Message is required.")
 
     bot = await _require_bot(bot_id)
@@ -222,6 +278,16 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
     if not flow:
         raise HTTPException(status_code=404, detail="Tagged workflow not found.")
 
+    try:
+        files = await file_repository.resolve_public(payload.files) if payload.files else []
+    except FileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    user_msg = {
+        "role": "user",
+        "content": message or ", ".join(f["file_name"] for f in files),
+        "meta": {"files": _file_meta(files)} if files else None,
+    }
 
     variable_defs = await db.list_variables()
 
@@ -239,7 +305,7 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
             event_callback=_cb,
             variable_defs=variable_defs, flow_id=bot["flow_id"],
         )
-        return graph.invoke({"input": message, "data": {}}), nodes, traces
+        return graph.invoke({"input": message, "data": {}, "files": files}), nodes, traces
 
     try:
         result, run_nodes, traces = await asyncio.to_thread(_run)
@@ -252,17 +318,16 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
             )
         if not reply:
             raise RuntimeError("The workflow returned an empty response.")
+    except PauseRequested as exc:
+        return await _paused_response(bot, session, flow, exc, user_msg, message)
     except Exception as exc:
-        await db.add_messages(bot_id, session_id, [{"role": "user", "content": message}])
+        await db.add_messages(bot_id, session_id, [user_msg])
         raise HTTPException(status_code=502, detail=str(exc))
 
     saved = await db.add_messages(
         bot_id,
         session_id,
-        [
-            {"role": "user", "content": message},
-            {"role": "bot", "content": reply},
-        ],
+        [user_msg, {"role": "bot", "content": reply}],
     )
 
     try:
@@ -276,5 +341,49 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
         "thread_id": session["thread_id"],
         "workflow_id": bot["flow_id"],
         "reply": reply,
+        "interaction": None,
         "messages": saved,
     }
+
+
+@router.post("/{bot_id}/sessions/{session_id}/interactions/{pause_id}/submit")
+async def submit_chat_interaction(
+    bot_id: str, session_id: str, pause_id: int, payload: InteractionSubmitRequest
+):
+    bot = await _require_bot(bot_id)
+    row = await db.get_interaction_message(bot_id, session_id, pause_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Interaction not found.")
+    current = ((row["meta"] or {}).get("interaction") or {}).get("status", "pending")
+    if current != "pending":
+        raise HTTPException(status_code=409, detail=f"Interaction is already {current}.")
+    flow = await db.get_flow(bot["flow_id"])
+    if not flow:
+        raise HTTPException(status_code=404, detail="Tagged workflow not found.")
+
+    outcome = await submit_interaction(pause_id, payload.response, payload.cancelled)
+
+    if outcome.get("cancelled"):
+        await db.set_interaction_status(pause_id, "cancelled")
+        saved = await db.add_messages(
+            bot_id, session_id,
+            [{"role": "bot", "content": "Interaction cancelled.", "meta": {"error": True}}],
+        )
+        return {"status": "cancelled", "messages": saved}
+
+    await db.set_interaction_status(pause_id, "submitted")
+    result = outcome.get("result")
+
+    if outcome.get("error"):
+        msgs = [{"role": "bot", "content": f"Error: {outcome['error']}", "meta": {"error": True}}]
+    elif outcome.get("paused") and isinstance(result, dict) and result.get("interaction"):
+        msgs = [_interaction_message(result["interaction"], bot_id, session_id)]
+    elif outcome.get("paused"):
+        msgs = [{"role": "bot", "content": (result or {}).get("message", "Workflow paused.")}]
+    else:
+        nodes = [Node.model_validate(n) for n in flow["nodes"]]
+        reply = _reply_for(nodes, result, outcome.get("display"))
+        msgs = [{"role": "bot", "content": reply or "The workflow returned an empty response."}]
+
+    saved = await db.add_messages(bot_id, session_id, msgs)
+    return {"status": "submitted", "messages": saved}

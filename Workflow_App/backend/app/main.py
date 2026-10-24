@@ -16,13 +16,18 @@ from app.routers.converter_router import router as converter_router
 from app.routers.time_router import router as time_router
 from app.routers.python_files_router import router as python_files_router
 from app.routers.hitl_router import router as hitl_router
+from app.routers.files_router import router as files_router
+from app.database import file_repository
+from app import runtime
 from app.resume import scheduler_loop
 from app import db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    runtime.set_loop(asyncio.get_running_loop())
     await db.init_db()
+    await file_repository.ensure_tables()
     await db.fail_interrupted_pauses()
     scheduler = asyncio.create_task(scheduler_loop())
     yield
@@ -51,7 +56,7 @@ app.include_router(converter_router)
 app.include_router(time_router)
 app.include_router(python_files_router)
 app.include_router(hitl_router)
-
+app.include_router(files_router)
 
 @app.get("/")
 def root():

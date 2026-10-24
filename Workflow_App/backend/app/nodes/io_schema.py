@@ -38,6 +38,7 @@ NODE_IO: dict[str, dict] = {
         ],
         "outputs": [
             {"key": "output", "label": "Start Output", "resolve": lambda r: r.get("current_value")},
+            {"key": "files", "label": "Uploaded Files", "resolve": lambda r: r.get("files")},
         ],
     },
     "type_converter": {
@@ -138,6 +139,18 @@ NODE_IO: dict[str, dict] = {
             {"key": "status", "label": "Wait Status", "resolve": _data_path("time_operation", "status")},
             {"key": "elapsed_seconds", "label": "Elapsed Seconds", "resolve": _data_path("time_operation", "elapsed_seconds")},
             {"key": "completed_at", "label": "Completed At", "resolve": _data_path("time_operation", "completed_at")},
+        ],
+    },
+    "file_reader": {
+        "inputs": [
+            {"key": "files", "label": "File Reference(s)", "state_key": "file_input", "transient": True},
+        ],
+        "outputs": [
+            {"key": "content",  "label": "Content",           "resolve": _cv_path("content")},
+            {"key": "metadata", "label": "Metadata",          "resolve": _cv_path("metadata")},
+            {"key": "results",  "label": "Structured Results", "resolve": _cv_path("results")},
+            {"key": "language", "label": "Language",          "resolve": _cv_path("language")},
+            {"key": "result",   "label": "Full Result (JSON)", "resolve": lambda r: r.get("current_value")},
         ],
     },
     "hitl": {

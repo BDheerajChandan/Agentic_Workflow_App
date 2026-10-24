@@ -13,7 +13,8 @@ export type NodeType =
   | "geo_location"
   | "python_functions"
   | "time_operation"
-  | "hitl";
+  | "hitl"
+  | "file_reader";
 
 export interface GraphNode {
   id: string;
@@ -35,6 +36,7 @@ export interface GraphPayload {
   edges: GraphEdge[];
   input: any;
   flow_id?: number | null;
+  files?: { file_id: string }[];
 }
 
 export type SourceLocality = "local" | "nonlocal";
