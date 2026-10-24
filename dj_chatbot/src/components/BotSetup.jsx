@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { listBots } from "../services/botApi";
 import BotFormModal from "./BotFormModal";
 
-
 const FLOW_APP_URL = import.meta.env.VITE_FLOW_APP_URL || "http://localhost:5173";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");

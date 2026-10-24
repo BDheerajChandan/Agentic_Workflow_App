@@ -37,19 +37,40 @@ def _positive(value, label, default, maximum, integer=False):
     return num
 
 
-def _resolve_query(state, config):
-    # mapped variable / connected node output (current_value) > node setting
-    raw = state.get("current_value")
-    if isinstance(raw, (str, int, float)) and not isinstance(raw, bool) and str(raw).strip():
-        return str(raw).strip()
-    static = config.get("location_name")
-    if isinstance(static, str) and static.strip():
-        return static.strip()
-    raise ValueError(
-        "Geo Location: location name / address is required "
-        "(connect a node, map a variable, or enter a value)."
-    )
+def _mode(config):
+    mode = str(config.get("config_mode") or "").strip().lower()
+    return mode if mode in ("static", "dynamic") else "legacy"
 
+
+def _resolve_query(state, config):
+    mode = _mode(config)
+
+    raw = state.get("current_value")
+    dynamic_val = None
+    if isinstance(raw, (str, int, float)) and not isinstance(raw, bool) and str(raw).strip():
+        dynamic_val = str(raw).strip()
+
+    static = config.get("location_name")
+    static_val = static.strip() if isinstance(static, str) and static.strip() else None
+
+    if mode == "static":
+        value = static_val
+    elif mode == "dynamic":
+        value = dynamic_val
+    else:
+        value = dynamic_val or static_val
+
+    if not value:
+        if mode == "dynamic":
+            raise ValueError(
+                "Geo Location: location name / address is required in Dynamic mode "
+                "(map a variable or connect a node)."
+            )
+        raise ValueError(
+            "Geo Location: location name / address is required "
+            "(connect a node, map a variable, or enter a value)."
+        )
+    return value
 
 def _place(p, with_address):
     return {

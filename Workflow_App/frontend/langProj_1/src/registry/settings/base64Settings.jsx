@@ -1,8 +1,8 @@
 // src/registry/settings/base64Settings.jsx
 
 import React from "react";
-import { SelectField, TextAreaField } from "./fields";
-import { sectionNote } from "./styles";
+import { SelectField, TextAreaField, ModeToggle } from "./fields";
+import { infoBox, sectionNote } from "./styles";
 
 const OPERATIONS = [
   { value: "encode", label: "Encode" },
@@ -10,8 +10,17 @@ const OPERATIONS = [
 ];
 
 export default function Base64Settings({ localData, patch }) {
+  const mode = localData.config_mode || "static";
+
+  const errors = [
+    mode === "static" && !(localData.input_value ?? "").toString().length
+      ? "Input value is required." : "",
+  ].filter(Boolean);
+
   return (
     <>
+      <ModeToggle mode={mode} onChange={(val) => patch({ config_mode: val })} />
+
       <SelectField
         label="Operation *"
         value={localData.operation || "encode"}
@@ -19,18 +28,30 @@ export default function Base64Settings({ localData, patch }) {
         options={OPERATIONS}
       />
 
-      <TextAreaField
-        label="Input value *"
-        value={localData.input_value}
-        onChange={(val) => patch({ input_value: val })}
-        placeholder="Text to encode / Base64 to decode…"
-        rows={4}
-      />
+      {mode === "static" ? (
+        <>
+          <div style={sectionNote}>
+            Static: the value below is used. Mappings and connected values are ignored.
+          </div>
+          <TextAreaField
+            label="Input value *"
+            value={localData.input_value}
+            onChange={(val) => patch({ input_value: val })}
+            placeholder="Text to encode / Base64 to decode…"
+            rows={4}
+          />
+        </>
+      ) : (
+        <div style={sectionNote}>
+          Dynamic: the input is resolved at run time from Input Value Mapping
+          (target "Input Text", dot-notation paths supported) or a connected node.
+          The saved static value is kept but not used.
+        </div>
+      )}
 
-      <div style={sectionNote}>
-        Required: input comes from a connected node or Input Value Mapping.
-        The value above is used only when no connected/mapped value is supplied.
-      </div>
+      {errors.map((e) => (
+        <div key={e} style={infoBox(true)}>⚠ {e}</div>
+      ))}
     </>
   );
 }

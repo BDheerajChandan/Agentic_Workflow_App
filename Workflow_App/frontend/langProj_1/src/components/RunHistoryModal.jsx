@@ -11,6 +11,7 @@ const fmtDuration = (ms) => (ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).to
 const STATUS = {
   passed:       { bg: "#dcfce7", border: "#86efac", badge: "#166534", label: "PASSED" },
   failed:       { bg: "#fee2e2", border: "#fca5a5", badge: "#991b1b", label: "FAILED" },
+  paused:       { bg: "#fef9c3", border: "#fde047", badge: "#854d0e", label: "PAUSED" },
 };
 
 export default function RunHistoryModal({ flowId, onClose }) {

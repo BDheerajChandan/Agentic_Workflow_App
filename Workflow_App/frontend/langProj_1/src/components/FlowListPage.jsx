@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { listFlows, deleteFlow } from "../services/api";
 import CreateBotModal from "./CreateBotModal";
+import OpenBotModal from "./OpenBotModal";
 
 const TOPBAR_HEIGHT = 42;
 
@@ -15,6 +16,7 @@ export default function FlowListPage({ onOpen, onNew }) {
 
   const [botTarget,  setBotTarget]  = useState(null); // { id, name } of the workflow
   const [createdBot, setCreatedBot] = useState(null);
+  const [openTarget, setOpenTarget] = useState(null); // { id, name } of the workflow
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
@@ -160,22 +162,46 @@ export default function FlowListPage({ onOpen, onNew }) {
               </div>
 
               <div style={styles.cardFooter}>
-                <button
-                  style={styles.botBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setBotTarget({ id: f.id, name: f.name });
-                  }}
-                  title="Create a Bot tagged to this workflow"
-                >
-                  🤖 Create Bot
-                </button>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button
+                    style={styles.botBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBotTarget({ id: f.id, name: f.name });
+                    }}
+                    title="Create a Bot tagged to this workflow"
+                  >
+                    🤖 Create Bot
+                  </button>
+                  <button
+                    style={styles.openBotBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenTarget({ id: f.id, name: f.name });
+                    }}
+                    title="Open a Bot tagged to this workflow"
+                  >
+                    📂 Open Bot
+                  </button>
+                </div>
                 <div style={styles.openHint}>Click to open →</div>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {openTarget && (
+        <OpenBotModal
+          flowId={openTarget.id}
+          flowName={openTarget.name}
+          onClose={() => setOpenTarget(null)}
+          onCreate={() => {
+            setBotTarget({ id: openTarget.id, name: openTarget.name });
+            setOpenTarget(null);
+          }}
+        />
+      )}
 
       {botTarget && (
         <CreateBotModal
@@ -322,6 +348,19 @@ const styles = {
     border: "none",
     background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
     color: "white",
+    fontWeight: 700,
+    fontSize: 11,
+    cursor: "pointer",
+    letterSpacing: "0.03em",
+    flexShrink: 0,
+  },
+
+  openBotBtn: {
+    padding: "6px 14px",
+    borderRadius: 8,
+    border: "1px solid #4f46e5",
+    background: "#020617",
+    color: "#a5b4fc",
     fontWeight: 700,
     fontSize: 11,
     cursor: "pointer",

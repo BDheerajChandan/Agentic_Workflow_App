@@ -10,7 +10,10 @@ export type NodeType =
   | "rag_generate"
   | "base64"
   | "geo_temperature"
-  | "geo_location";
+  | "geo_location"
+  | "python_functions"
+  | "time_operation"
+  | "hitl";
 
 export interface GraphNode {
   id: string;

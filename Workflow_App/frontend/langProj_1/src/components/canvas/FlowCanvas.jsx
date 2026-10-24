@@ -12,7 +12,8 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-import { runGraphStream, saveFlow, getFlowByRoute } from "../../services/api";
+import { runGraphStream, saveFlow, getFlowByRoute, submitHitl } from "../../services/api";
+import HitlModal from "../hitl/HitlModal";
 import PlaygroundPanel from "../playground/PlaygroundPanel";
 import CreateVariableModal from "../CreateVariableModal";
 
@@ -23,6 +24,8 @@ import SettingsPanel from "../../registry/SettingsPanel";
 import NodeStatesModal from "../NodeStatesModal";
 import RunHistoryModal from "../RunHistoryModal";
 import { buildOutputDisplay } from "../../utils/outputDisplay";
+import { downloadJson } from "../../utils/download";
+import { buildExport, parseImport, prepareImport } from "../../utils/flowTransfer";
 
 let _id = 1;
 const getNodeId = () => `node_${_id++}`;
@@ -83,6 +86,25 @@ function FlowCanvas({ routeSlug, onBack }) {
   const [statesOpen, setStatesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [hitlPrompt, setHitlPrompt] = useState(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [transferMsg, setTransferMsg] = useState(null);
+  const optionsRef = useRef(null);
+  const importFileRef = useRef(null);
+
+  useEffect(() => {
+    if (!optionsOpen) return undefined;
+    const handler = (e) => {
+      if (optionsRef.current?.contains(e.target)) return;
+      setOptionsOpen(false);
+    };
+    document.addEventListener("mousedown", handler, true);
+    document.addEventListener("touchstart", handler, true);
+    return () => {
+      document.removeEventListener("mousedown", handler, true);
+      document.removeEventListener("touchstart", handler, true);
+    };
+  }, [optionsOpen]);
 
   const playgroundRef = useRef(null);
   useEffect(() => {
@@ -90,6 +112,7 @@ function FlowCanvas({ routeSlug, onBack }) {
     const handler = (e) => {
       if (playgroundRef.current?.contains(e.target)) return;
       if (e.target.closest?.("[data-playground-toggle]")) return;
+      if (e.target.closest?.("[data-hitl-modal]")) return;
       setPlaygroundOpen(false);
     };
     document.addEventListener("mousedown", handler, true);
@@ -208,6 +231,40 @@ function FlowCanvas({ routeSlug, onBack }) {
     }
   };
 
+    // ── Human-in-the-loop: open the popup for a paused run, resume on submit ──
+  const askHuman = (request) =>
+    new Promise((resolve, reject) => {
+      setHitlPrompt({
+        request,
+        submit: async (response) => {
+          const outcome = await submitHitl(request.pause_id, { response });
+          setHitlPrompt(null);
+          resolve(outcome);
+        },
+        cancel: async () => {
+          try {
+            await submitHitl(request.pause_id, { cancelled: true });
+          } catch {
+            /* ignore */
+          }
+          setHitlPrompt(null);
+          reject(new Error("HITL interaction cancelled by user."));
+        },
+      });
+    });
+
+  const completeHitl = async (first) => {
+    let current = first;
+    let display;
+    while (current?.paused && current?.hitl) {
+      const outcome = await askHuman(current.hitl);
+      if (outcome.error) throw new Error(outcome.error);
+      current = outcome.result;
+      display = outcome.display ?? undefined;
+    }
+    return { result: current, display };
+  };
+
   // ── Run (SSE-driven execution highlighting) ───────────────────────────────
   const handleRun = async () => {
     setError(null);
@@ -218,10 +275,12 @@ function FlowCanvas({ routeSlug, onBack }) {
     setCompletedNodeIds(new Set());
     setNodeTraces([]);
     const traces = [];
+    let display;
     try {
       const result = await runGraphStream(
         { nodes, edges, input, flow_id: flowId },
         (evt) => {
+          if (evt.type === "result" && evt.display !== undefined) display = evt.display;
           if (evt.type === "node") {
             if (evt.status === "running") {
               setRunningNodeId(evt.node_id);
@@ -235,12 +294,14 @@ function FlowCanvas({ routeSlug, onBack }) {
           }
         }
       );
+      const done = await completeHitl(result?.result ?? result);
       setOutput(
         await buildOutputDisplay({
           nodes,
           flowId,
-          result: result?.result ?? result,
+          result: done.result,
           traces,
+          display: done.display ?? display,
         })
       );
     } catch (err) {
@@ -248,6 +309,63 @@ function FlowCanvas({ routeSlug, onBack }) {
     } finally {
       setRunningNodeId(null);
       setRunning(false);
+    }
+  };
+
+    const handleExportFlow = async () => {
+    setOptionsOpen(false);
+    setTransferMsg(null);
+    try {
+      const doc = await buildExport({ flowName, input, nodes, edges, flowId });
+      const base = (flowName || "workflow").trim().replace(/[^\w.-]+/g, "_") || "workflow";
+      downloadJson(`${base}_export.json`, doc);
+      setTransferMsg({ ok: true, text: "✓ Flow exported" });
+    } catch (err) {
+      setTransferMsg({ ok: false, text: `Export failed: ${err?.message || err}` });
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setTransferMsg(null);
+    try {
+      if (!file.name.toLowerCase().endsWith(".json")) throw new Error("Only .json files are supported.");
+      const payload = parseImport(await file.text());
+      if (
+        (nodes.length > 0 || edges.length > 0) &&
+        !window.confirm("Importing replaces the current canvas. Unsaved changes will be lost. Continue?")
+      ) {
+        return;
+      }
+      const prepared = await prepareImport(payload, flowId);
+
+      setNodes(prepared.nodes);
+      setEdges(prepared.edges);
+      setInput(prepared.input_value);
+      setFlowName(prepared.name);
+      setOutput(null);
+      setError(null);
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setSettingsOpen(false);
+      setRunningNodeId(null);
+      setCompletedNodeIds(new Set());
+      setNodeTraces([]);
+      setVariablesVersion((v) => v + 1);
+
+      let maxId = 0;
+      prepared.nodes.forEach((n) => {
+        const num = parseInt(String(n.id).replace("node_", ""), 10);
+        if (!isNaN(num) && num > maxId) maxId = num;
+      });
+      _id = maxId + 1;
+
+      setTransferMsg({ ok: true, text: `✓ Imported ${prepared.nodes.length} node(s). Click Save to keep it.` });
+      setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 150);
+    } catch (err) {
+      setTransferMsg({ ok: false, text: `Import failed: ${err?.message || err}` });
     }
   };
 
@@ -407,11 +525,51 @@ function FlowCanvas({ routeSlug, onBack }) {
 
         <aside style={styles.sidebar}>
           <div style={styles.sidebarHeader}>
-            <div style={styles.logo}>
-              <span style={styles.logoDot} />
-              LangGraph
+            <div style={styles.logoRow}>
+              <div style={styles.logo}>
+                <span style={styles.logoDot} />
+                LangGraph
+              </div>
+              <div ref={optionsRef} style={{ position: "relative" }}>
+                <button
+                  style={{
+                    ...styles.optionsBtn,
+                    borderColor: optionsOpen ? "#6366f1" : "#334155",
+                    color: optionsOpen ? "#818cf8" : "#94a3b8",
+                  }}
+                  onClick={() => setOptionsOpen((o) => !o)}
+                >
+                  Options ▾
+                </button>
+                {optionsOpen && (
+                  <div style={styles.optionsMenu}>
+                    <button
+                      style={styles.optionsItem}
+                      onClick={() => { setOptionsOpen(false); importFileRef.current?.click(); }}
+                    >
+                      ⬆ Import Flow
+                    </button>
+                    <button style={styles.optionsItem} onClick={handleExportFlow}>
+                      ⬇ Export Flow
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div style={styles.logoSub}>Visual Flow Builder</div>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: "none" }}
+              onChange={handleImportFile}
+            />
+            {transferMsg && (
+              <div style={{ ...styles.transferMsg, ...(transferMsg.ok ? styles.transferOk : styles.transferErr) }}>
+                {transferMsg.text}
+                <button style={styles.transferClose} onClick={() => setTransferMsg(null)}>✕</button>
+              </div>
+            )}
           </div>
 
           <div style={styles.nodesHeaderRow}>
@@ -545,9 +703,11 @@ function FlowCanvas({ routeSlug, onBack }) {
                 setRunningNodeId(null);
                 setCompletedNodeIds(new Set());
                 const traces = [];
+                let display;
                 const result = await runGraphStream(
                   { nodes, edges, input: message, flow_id: flowId },
                   (evt) => {
+                    if (evt.type === "result" && evt.display !== undefined) display = evt.display;
                     if (evt.type === "node") {
                       if (evt.status === "running") setRunningNodeId(evt.node_id);
                       else if (evt.status === "done") {
@@ -559,12 +719,14 @@ function FlowCanvas({ routeSlug, onBack }) {
                     }
                   }
                 );
+                const done = await completeHitl(result?.result ?? result);
                 setRunningNodeId(null);
                 return buildOutputDisplay({
                   nodes,
                   flowId,
-                  result: result?.result ?? result,
+                  result: done.result,
                   traces,
+                  display: done.display ?? display,
                 });
               }}
             />
@@ -597,6 +759,15 @@ function FlowCanvas({ routeSlug, onBack }) {
             </div>
           </div>
         </div>
+      )}
+
+      {hitlPrompt && (
+        <HitlModal
+          key={hitlPrompt.request.pause_id}
+          request={hitlPrompt.request}
+          onSubmit={hitlPrompt.submit}
+          onCancel={hitlPrompt.cancel}
+        />
       )}
 
       {historyOpen && (
@@ -770,6 +941,31 @@ const styles = {
     display: "flex", alignItems: "center", gap: 8,
     fontSize: 15, fontWeight: 700, color: "#e2e8f0", letterSpacing: "0.05em",
   },
+  logoRow: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  optionsBtn: {
+    padding: "3px 8px", borderRadius: 7, border: "1px solid #334155",
+    background: "transparent", fontSize: 11, fontWeight: 600,
+    cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit",
+  },
+  optionsMenu: {
+    position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 140,
+    background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8,
+    padding: 4, display: "flex", flexDirection: "column", gap: 2,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 2000,
+  },
+  optionsItem: {
+    padding: "7px 10px", borderRadius: 6, border: "none", background: "transparent",
+    color: "#cbd5e1", fontSize: 12, textAlign: "left", cursor: "pointer",
+    whiteSpace: "nowrap", fontFamily: "inherit",
+  },
+  transferMsg: {
+    marginTop: 8, padding: "6px 8px", borderRadius: 6, fontSize: 11, lineHeight: 1.5,
+    display: "flex", justifyContent: "space-between", gap: 6, wordBreak: "break-word",
+    maxHeight: 90, overflowY: "auto",
+  },
+  transferOk:  { background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", color: "#6ee7b7" },
+  transferErr: { background: "rgba(239,68,68,0.1)",  border: "1px solid rgba(239,68,68,0.3)",  color: "#fca5a5" },
+  transferClose: { background: "transparent", border: "none", color: "inherit", cursor: "pointer", fontSize: 11, flexShrink: 0 },
   logoDot: {
     width: 8, height: 8, borderRadius: "50%",
     background: "#6366f1", boxShadow: "0 0 8px #6366f1", display: "inline-block",

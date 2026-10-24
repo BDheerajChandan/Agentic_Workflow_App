@@ -20,6 +20,17 @@ def _cv_path(*path):
         return cur
     return resolve
 
+def _data_path(*path):
+    """Resolve a nested key path inside result['data']."""
+    def resolve(r):
+        cur = r.get("data")
+        for key in path:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(key)
+        return cur
+    return resolve
+
 NODE_IO: dict[str, dict] = {
     "start": {
         "inputs": [
@@ -107,6 +118,38 @@ NODE_IO: dict[str, dict] = {
             {"key": "latitude",     "label": "Latitude",             "resolve": _cv_path("data", "latitude")},
             {"key": "longitude",    "label": "Longitude",            "resolve": _cv_path("data", "longitude")},
             {"key": "display_name", "label": "Display Name",         "resolve": _cv_path("data", "display_name")},
+        ],
+    },
+        "python_functions": {
+        "inputs": [
+            {"key": "inputs", "label": "Inputs", "state_key": "python_inputs", "transient": True},
+        ],
+        "outputs": [
+            {"key": "result", "label": "Function Result", "resolve": lambda r: r.get("current_value")},
+            {"key": "stdout", "label": "Captured Stdout", "resolve": _data_path("python_stdout")},
+        ],
+    },
+    "time_operation": {
+        "inputs": [
+            {"key": "value", "label": "Pass-through Value", "state_key": "current_value"},
+        ],
+        "outputs": [
+            {"key": "value", "label": "Pass-through Value", "resolve": lambda r: r.get("current_value")},
+            {"key": "status", "label": "Wait Status", "resolve": _data_path("time_operation", "status")},
+            {"key": "elapsed_seconds", "label": "Elapsed Seconds", "resolve": _data_path("time_operation", "elapsed_seconds")},
+            {"key": "completed_at", "label": "Completed At", "resolve": _data_path("time_operation", "completed_at")},
+        ],
+    },
+    "hitl": {
+        "inputs": [
+            {"key": "value", "label": "Input Value", "state_key": "current_value"},
+        ],
+        "outputs": [
+            {"key": "result",      "label": "Full Result (JSON)", "resolve": lambda r: r.get("current_value")},
+            {"key": "status",      "label": "Status",             "resolve": _cv_path("status")},
+            {"key": "values",      "label": "Original Values",    "resolve": _cv_path("values")},
+            {"key": "suggestions", "label": "Suggestions",        "resolve": _cv_path("suggestions")},
+            {"key": "responses",   "label": "Responses",          "resolve": _cv_path("responses")},
         ],
     },
 }

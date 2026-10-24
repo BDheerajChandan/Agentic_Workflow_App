@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app import db
 from app.graph.builder import build_graph
+from app.output_display import display_mode, render_reply, resolve_output_display
 from app.routers.graph_router import _serialise
 from app.schemas.graph_schema import Edge, Node
 
@@ -227,16 +228,28 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
     def _run():
         nodes = [Node.model_validate(n) for n in flow["nodes"]]
         edges = [Edge.model_validate(e) for e in flow["edges"]]
+        traces: list = []
+
+        def _cb(node_id, status, detail=None):
+            if status == "trace" and detail:
+                traces.append(detail)
+
         graph = build_graph(
             nodes, edges,
+            event_callback=_cb,
             variable_defs=variable_defs, flow_id=bot["flow_id"],
         )
-        return graph.invoke({"input": message, "data": {}})
+        return graph.invoke({"input": message, "data": {}}), nodes, traces
 
     try:
-        result = await asyncio.to_thread(_run)
+        result, run_nodes, traces = await asyncio.to_thread(_run)
         serial = _serialise(result)
-        reply = _extract_reply(serial)
+        if display_mode(run_nodes) == "entire":
+            reply = _extract_reply(serial)
+        else:
+            reply = render_reply(
+                resolve_output_display(run_nodes, serial, traces, variable_defs)
+            )
         if not reply:
             raise RuntimeError("The workflow returned an empty response.")
     except Exception as exc:

@@ -15,16 +15,28 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.graph.builder import build_graph
+from app.output_display import resolve_output_display
+from app.pause import PauseRequested
+from app.resume import paused_result, store_pause
 from app.schemas.graph_schema import GraphRequest
 from app.variables import VariableError
 from app import db
 
 router = APIRouter()
 
+SAVE_FIRST = "Hold / long waits require a saved workflow."
+
 
 class GraphRunRequest(GraphRequest):
     """Extends GraphRequest with optional flow_id for persistence."""
     flow_id: int | None = None
+
+
+def _plain(payload: GraphRunRequest):
+    return (
+        [n.model_dump() for n in payload.nodes],
+        [e.model_dump() for e in payload.edges],
+    )
 
 
 @router.post("/run")
@@ -36,12 +48,18 @@ async def run_graph(payload: GraphRunRequest):
             variable_defs=defs, flow_id=payload.flow_id,
         )
 
-        result = graph.invoke({
-            "input": payload.input,
-            "data": {},
-        })
+        result = await asyncio.to_thread(
+            graph.invoke,
+            {"input": payload.input, "data": {}},
+        )
     except VariableError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    except PauseRequested as exc:
+        if payload.flow_id is None:
+            raise HTTPException(status_code=400, detail=SAVE_FIRST)
+        nodes, edges = _plain(payload)
+        pause_id = await store_pause(exc, payload.flow_id, nodes, edges, str(payload.input))
+        return {"result": paused_result(exc, pause_id)}
 
     print("result :", result)
 
@@ -74,6 +92,7 @@ async def run_graph_stream(payload: GraphRunRequest):
     loop = asyncio.get_event_loop()
     defs = await db.list_variables()
     started_at = datetime.now(timezone.utc)
+    pause_box: dict = {}
 
     def event_callback(node_id: str, status: str, detail=None):
         events.put({"type": "node", "node_id": node_id, "status": status, "detail": detail})
@@ -87,6 +106,8 @@ async def run_graph_stream(payload: GraphRunRequest):
             )
             result = graph.invoke({"input": payload.input, "data": {}})
             events.put({"type": "result", "result": _serialise(result)})
+        except PauseRequested as exc:
+            pause_box["exc"] = exc
         except Exception as exc:
             events.put({"type": "error", "message": str(exc)})
         finally:
@@ -97,6 +118,7 @@ async def run_graph_stream(payload: GraphRunRequest):
     async def event_generator():
         final_result: dict | None = None
         error_msg: str | None = None
+        paused = False
         traces: list[dict] = []
 
         while True:
@@ -105,16 +127,43 @@ async def run_graph_stream(payload: GraphRunRequest):
                 break
             if evt["type"] == "result":
                 final_result = evt["result"]
+                try:
+                    evt = {
+                        **evt,
+                        "display": resolve_output_display(
+                            payload.nodes, final_result, traces, defs
+                        ),
+                    }
+                except Exception as exc:
+                    print(f"⚠️  Failed to resolve output display: {exc}")
             elif evt["type"] == "error":
                 error_msg = evt["message"]
             elif evt["type"] == "node" and evt.get("status") == "trace" and evt.get("detail"):
                 traces.append(evt["detail"])
             yield f"data: {json.dumps(evt)}\n\n"
 
+        pexc = pause_box.get("exc")
+        if pexc is not None:
+            if payload.flow_id is None:
+                error_msg = SAVE_FIRST
+                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+            else:
+                try:
+                    nodes, edges = _plain(payload)
+                    pause_id = await store_pause(
+                        pexc, payload.flow_id, nodes, edges, str(payload.input)
+                    )
+                    final_result = paused_result(pexc, pause_id)
+                    paused = True
+                    yield f"data: {json.dumps({'type': 'result', 'result': final_result})}\n\n"
+                except Exception as exc:
+                    error_msg = f"Failed to persist paused run: {exc}"
+                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+
         ended_at = datetime.now(timezone.utc)
 
         if payload.flow_id is not None:
-            if final_result is not None:
+            if final_result is not None and not paused:
                 try:
                     await db.record_execution(
                         flow_id=payload.flow_id,
@@ -126,9 +175,10 @@ async def run_graph_stream(payload: GraphRunRequest):
 
             try:
                 failed = error_msg is not None or final_result is None
+                status = "failed" if failed else ("paused" if paused else "passed")
                 await db.record_run(
                     flow_id=payload.flow_id,
-                    status="failed" if failed else "passed",
+                    status=status,
                     started_at=started_at,
                     ended_at=ended_at,
                     input_value=str(payload.input),

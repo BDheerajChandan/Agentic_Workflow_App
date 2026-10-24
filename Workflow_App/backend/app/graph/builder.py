@@ -8,6 +8,7 @@ from langgraph.graph import StateGraph, END
 from app.graph.state import GraphState
 from app.nodes.io_schema import find_input, find_output, primary_value
 from app.nodes.registry import NODE_REGISTRY
+from app.pause import PauseRequested
 from app.variables import VariableError, VariableRuntime, parse_variable_config, resolve_path
 
 
@@ -25,7 +26,16 @@ def _safe(obj):
         return str(obj)
 
 
-def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=None):
+def build_graph(
+    nodes,
+    edges,
+    event_callback=None,
+    variable_defs=None,
+    flow_id=None,
+    entry_node_id=None,
+    initial_variables=None,
+    node_overrides=None,
+):
 
     if not nodes:
         raise Exception("No nodes provided")
@@ -33,6 +43,10 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
     # Runtime variable context: one per build_graph call == one per execution.
     runtime = VariableRuntime(variable_defs or [], flow_id)
     runtime.validate_nodes(nodes)
+    if initial_variables:
+        runtime.load_values(initial_variables)
+
+    overrides = node_overrides or {}
 
     targets = set()
     for edge in edges:
@@ -58,6 +72,7 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                 run_state = state
                 result = None
                 error = None
+                paused = False
                 try:
                     transient_keys = set()
 
@@ -77,7 +92,15 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                                 transient_keys.add(target["state_key"])
                         run_state = {**state, **updates}
 
-                    result = fn(run_state, config)
+                    result = fn(
+                        run_state,
+                        {
+                            **(config or {}),
+                            **overrides.get(node_id, {}),
+                            "__flow_id": flow_id,
+                            "__node_id": node_id,
+                        },
+                    )
 
                     strip = {k for k in transient_keys if k not in state}
                     if strip:
@@ -105,6 +128,11 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                     snapshot = runtime.snapshot()
                     if snapshot:
                         result = {**result, "variables": snapshot}
+                except PauseRequested as exc:
+                    exc.state = run_state
+                    exc.variables = runtime.export_values()
+                    paused = True
+                    raise
                 except Exception as exc:
                     error = str(exc)
                     raise
@@ -113,7 +141,7 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
                         event_callback(node_id, "trace", {
                             "node_id": node_id,
                             "node_type": node_type,
-                            "status": "failed" if error else "passed",
+                            "status": "paused" if paused else ("failed" if error else "passed"),
                             "input": _safe(run_state),
                             "output": _safe(result),
                             "value": _safe(primary_value(node_type, result)),
@@ -136,18 +164,23 @@ def build_graph(nodes, edges, event_callback=None, variable_defs=None, flow_id=N
             )
         )
 
-    entry_nodes = [node.id for node in nodes if node.id not in targets]
-
-    if not entry_nodes:
-        start_nodes = [node.id for node in nodes if node.type == "start"]
-        if start_nodes:
-            entry = start_nodes[0]
-        else:
-            raise Exception(
-                "No valid entry node found. Please connect graph properly."
-            )
+    if entry_node_id:
+        if entry_node_id not in node_configs:
+            raise Exception(f"Resume entry node '{entry_node_id}' not found.")
+        entry = entry_node_id
     else:
-        entry = entry_nodes[0]
+        entry_nodes = [node.id for node in nodes if node.id not in targets]
+
+        if not entry_nodes:
+            start_nodes = [node.id for node in nodes if node.type == "start"]
+            if start_nodes:
+                entry = start_nodes[0]
+            else:
+                raise Exception(
+                    "No valid entry node found. Please connect graph properly."
+                )
+        else:
+            entry = entry_nodes[0]
 
     graph.set_entry_point(entry)
 

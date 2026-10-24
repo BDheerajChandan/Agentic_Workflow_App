@@ -329,3 +329,80 @@ export const detectConverterType = async (value: string) => {
   const res = await axios.post(`${BASE_URL}/converter/detect`, { value });
   return res.data as { type: string };
 };
+
+// ─── Time Operation ───────────────────────────────────────────────────────────
+
+export const signalTimeOperation = async (payload: {
+  flow_id: number | null;
+  node_id: string;
+  action: "resume" | "cancel";
+}) => {
+  const res = await axios.post(`${BASE_URL}/time-operation/signal`, payload);
+  return res.data as { message: string; affected: number };
+};
+
+
+// ─── Python file upload ───────────────────────────────────────────────────────
+
+export interface PythonFileInfo {
+  file_name: string;
+  code: string;
+  size: number;
+  lines: number;
+}
+
+export const validatePythonFile = async (file_name: string, content: string) => {
+  const res = await axios.post(`${BASE_URL}/python-files/validate`, { file_name, content });
+  return res.data as PythonFileInfo;
+};
+
+// ─── Time Operation: durable pauses ───────────────────────────────────────────
+
+export interface TimePause {
+  pause_id: number;
+  flow_id: number;
+  node_id: string;
+  operation: string;
+  status: string;
+  resume_at: string | null;
+  hold_expires_at: string | null;
+  on_timeout: string;
+  created_at: string;
+}
+
+export const listTimePauses = async (flowId: number, nodeId?: string) => {
+  const res = await axios.get(`${BASE_URL}/time-operation/pauses`, {
+    params: nodeId ? { flow_id: flowId, node_id: nodeId } : { flow_id: flowId },
+  });
+  return res.data as { pauses: TimePause[] };
+};
+
+export const resumeTimePause = async (pauseId: number) => {
+  const res = await axios.post(`${BASE_URL}/time-operation/pauses/${pauseId}/resume`);
+  return res.data as { message: string };
+};
+
+export const cancelTimePause = async (pauseId: number) => {
+  const res = await axios.post(`${BASE_URL}/time-operation/pauses/${pauseId}/cancel`);
+  return res.data as { message: string };
+};
+
+// ─── HITL ─────────────────────────────────────────────────────────────────────
+
+export const validateQuestionsFile = async (file_name: string, content: string) => {
+  const res = await axios.post(`${BASE_URL}/hitl/questions/validate`, { file_name, content });
+  return res.data as { file_name: string; questions: any[]; count: number };
+};
+
+export const normalizeHitlQuestion = async (question: Record<string, any>) => {
+  const res = await axios.post(`${BASE_URL}/hitl/questions/normalize`, { question });
+  return res.data as { question: any };
+};
+
+export const submitHitl = async (
+  pauseId: number,
+  payload: { response?: Record<string, any>; cancelled?: boolean }
+) => {
+  const res = await axios.post(`${BASE_URL}/hitl/pauses/${pauseId}/submit`, payload);
+  return res.data as { result?: any; error?: string | null; paused?: boolean; display?: any; cancelled?: boolean; message?: string };
+};

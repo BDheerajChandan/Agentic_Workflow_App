@@ -45,20 +45,34 @@ def _connected_coord(state, key):
     return inner.get(key)
 
 
+def _mode(config):
+    mode = str(config.get("config_mode") or "").strip().lower()
+    return mode if mode in ("static", "dynamic") else "legacy"
+
+
 def _resolve_coord(state, config, key, label, low, high, env_name):
-    # mapped variable > connected node output > node setting > env fallback
-    candidates = (
-        state.get(f"geo_{key}"),
-        _connected_coord(state, key),
-        config.get(key),
-        os.getenv(env_name),
-    )
+    mode = _mode(config)
+    if mode == "static":
+        candidates = (config.get(key), os.getenv(env_name))
+    elif mode == "dynamic":
+        candidates = (state.get(f"geo_{key}"), _connected_coord(state, key))
+    else:
+        # legacy (no mode saved): mapped variable > connected node > setting > env
+        candidates = (
+            state.get(f"geo_{key}"),
+            _connected_coord(state, key),
+            config.get(key),
+            os.getenv(env_name),
+        )
     for candidate in candidates:
         num = _to_float(candidate, label, low, high)
         if num is not None:
             return num
+    if mode == "dynamic":
+        raise ValueError(
+            f"Geo Temperature: {label} is required in Dynamic mode (map a variable or connect a node)."
+        )
     raise ValueError(f"Geo Temperature: {label} is required.")
-
 
 def _positive(value, label, default, maximum, integer=False):
     if value is None or (isinstance(value, str) and not value.strip()):

@@ -268,3 +268,17 @@ class VariableRuntime:
                 key = f"{key} ({d['visibility']})"
             out[key] = value
         return out
+
+    def export_values(self) -> dict[str, Any]:
+        with self._lock:
+            return {str(k): v for k, v in self._values.items()}
+
+    def load_values(self, values: dict | None) -> None:
+        with self._lock:
+            for k, v in (values or {}).items():
+                try:
+                    vid = int(k)
+                except (TypeError, ValueError):
+                    continue
+                if vid in self._defs:
+                    self._values[vid] = v

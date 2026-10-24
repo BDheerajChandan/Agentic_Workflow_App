@@ -1,12 +1,11 @@
 // src/registry/settings/VariableSection.jsx
 // Generic Input / Output Value Mapping (single or multiple), rendered at the bottom of every
 // variable-capable node's Settings Panel. Stored in node.data.variable using binding dictionaries:
-//   input_mapping:  { enabled, bindings: { "<target input key>": { variable_id } },            order: [keys] }
-//   output_mapping: { enabled, bindings: { "<variable_id>": { source, output|static_value } }, order: [keys] }
-// One key = single mapping, n keys = multiple. `order` (an array) preserves execution order.
-// The legacy flat single-mapping shape is still read and treated as a one-key dictionary.
+//   input_mapping:  { enabled, bindings: { "<target input key>": { variable_id, path? } },             order: [keys] }
+//   output_mapping: { enabled, bindings: { "<variable_id>": { source, output|static_value, path? } }, order: [keys] }
+// UI rows carry a stable `rid` (UI-only, never persisted) so deleting one row never disturbs another.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getNodeIO, listVariables } from "../../services/api";
 import { Field, SelectField } from "./fields";
 import {
@@ -18,6 +17,9 @@ const SOURCE_OPTIONS = [
   { value: "node_output", label: "Node Output" },
   { value: "static",      label: "Static Value" },
 ];
+
+let ridSeq = 0;
+const newRid = () => `row_${Date.now().toString(36)}_${(ridSeq++).toString(36)}`;
 
 let ioPromise = null;
 const loadNodeIO = () => {
@@ -75,12 +77,16 @@ function orderedKeys(bindings, order) {
 function inputRows(m) {
   if (m && m.bindings && typeof m.bindings === "object") {
     return orderedKeys(m.bindings, m.order).map((k) => ({
+      rid: newRid(),
       target: k,
       variable_id: m.bindings[k]?.variable_id ?? null,
       path: m.bindings[k]?.path ?? "",
     }));
   }
-  return [{ target: m?.target || "", variable_id: m?.variable_id ?? null, path: "" }];
+  if (m && (m.target || m.variable_id != null)) {
+    return [{ rid: newRid(), target: m.target || "", variable_id: m.variable_id ?? null, path: "" }];
+  }
+  return [];
 }
 
 const toInputMapping = (enabled, rows) => ({
@@ -99,6 +105,7 @@ function outputRows(m) {
     return orderedKeys(m.bindings, m.order).map((k) => {
       const b = m.bindings[k] || {};
       return {
+        rid: newRid(),
         variable_id: k === "" ? null : Number(k),
         source: b.source || "node_output",
         output: b.output,
@@ -107,13 +114,17 @@ function outputRows(m) {
       };
     });
   }
-  return [{
-    variable_id: m?.variable_id ?? null,
-    source: m?.source || "node_output",
-    output: m?.output,
-    path: "",
-    static_value: m?.static_value,
-  }];
+  if (m && (m.variable_id != null || m.output || m.static_value != null)) {
+    return [{
+      rid: newRid(),
+      variable_id: m.variable_id ?? null,
+      source: m.source || "node_output",
+      output: m.output,
+      path: "",
+      static_value: m.static_value,
+    }];
+  }
+  return [];
 }
 
 const outKey = (r) => (r.variable_id == null ? "" : String(r.variable_id));
@@ -129,7 +140,7 @@ const toOutputMapping = (enabled, rows) => ({
             source: "node_output",
             output: r.output,
             ...(r.path && r.path.trim() ? { path: r.path.trim() } : {}),
-          }
+          },
     ])
   ),
   order: rows.map(outKey),
@@ -140,6 +151,9 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
   const [variables, setVariables] = useState([]);
   const [loaded,    setLoaded]    = useState(false);
   const [error,     setError]     = useState("");
+  const [inRows,    setInRows]    = useState([]);
+  const [outRows,   setOutRows]   = useState([]);
+  const hydrated = useRef(false);
 
   const io  = nodeIO ? (nodeIO.nodes[nodeType] || nodeIO.default) : null;
   const cfg = normalize(localData.variable || {}, io);
@@ -154,6 +168,14 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
       .catch(() => { if (!cancelled) setError("Failed to load node inputs/outputs."); });
     return () => { cancelled = true; };
   }, []);
+
+  // One-time hydration of UI rows from the saved configuration (rows then live in local state).
+  useEffect(() => {
+    if (hydrated.current || !io || !localData.variable) return;
+    hydrated.current = true;
+    setInRows(inputRows(im));
+    setOutRows(outputRows(om));
+  }, [io, localData.variable]); // eslint-disable-line
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -202,30 +224,33 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
   const firstOut = io?.outputs[0]?.key || "";
 
   // ── Input rows ───────────────────────────────────────────────────────────
-  const inRows = inputRows(im).map((r) => ({ ...r, target: r.target || firstIn }));
-  const setInRows = (rows) => update({ input_mapping: toInputMapping(true, rows) });
-  const updIn = (idx, u) => setInRows(inRows.map((r, i) => (i === idx ? { ...r, ...u } : r)));
-  const removeIn = (idx) => {
-    const next = inRows.filter((_, i) => i !== idx);
-    setInRows(next.length ? next : [{ target: firstIn, variable_id: null }]);
+  const commitIn = (rows, on = true) => {
+    hydrated.current = true;
+    setInRows(rows);
+    update({ input_mapping: toInputMapping(on, rows) });
   };
+  const updIn    = (rid, u) => commitIn(inRows.map((r) => (r.rid === rid ? { ...r, ...u } : r)));
+  const removeIn = (rid)    => commitIn(inRows.filter((r) => r.rid !== rid));
   const unusedIn = io?.inputs.find((i) => !inRows.some((r) => r.target === i.key));
   const canAddIn = !!unusedIn;
-  const addIn = () => canAddIn && setInRows([...inRows, { target: unusedIn.key, variable_id: null }]);
+  const addIn = () =>
+    canAddIn &&
+    commitIn([...inRows, { rid: newRid(), target: unusedIn.key, variable_id: null, path: "" }]);
 
   // ── Output rows ──────────────────────────────────────────────────────────
-  const outRows = outputRows(om).map((r) => ({ ...r, output: r.output || firstOut }));
-  const setOutRows = (rows) => update({ output_mapping: toOutputMapping(true, rows) });
-  const updOut = (idx, u) => setOutRows(outRows.map((r, i) => (i === idx ? { ...r, ...u } : r)));
-  const removeOut = (idx) => {
-    const next = outRows.filter((_, i) => i !== idx);
-    setOutRows(next.length ? next : [{ variable_id: null, source: "node_output", output: firstOut }]);
+  const blankOut = () => ({
+    rid: newRid(), variable_id: null, source: "node_output", output: firstOut, path: "", static_value: "",
+  });
+  const commitOut = (rows, on = true) => {
+    hydrated.current = true;
+    setOutRows(rows);
+    update({ output_mapping: toOutputMapping(on, rows) });
   };
+  const updOut    = (rid, u) => commitOut(outRows.map((r) => (r.rid === rid ? { ...r, ...u } : r)));
+  const removeOut = (rid)    => commitOut(outRows.filter((r) => r.rid !== rid));
   const canAddOut =
     !!io && outRows.length < variables.length && outRows.every((r) => r.variable_id != null);
-  const addOut = () =>
-    canAddOut &&
-    setOutRows([...outRows, { variable_id: null, source: "node_output", output: firstOut }]);
+  const addOut = () => canAddOut && commitOut([...outRows, blankOut()]);
 
   const addTitle = (can, noun, blocked) =>
     can
@@ -262,8 +287,13 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                 disabled={!io}
                 onChange={(e) =>
                   e.target.checked
-                    ? setInRows(inRows)
-                    : update({ input_mapping: { ...im, enabled: false } })
+                    ? commitIn(
+                        inRows.length
+                          ? inRows
+                          : [{ rid: newRid(), target: firstIn, variable_id: null, path: "" }],
+                        true
+                      )
+                    : update({ input_mapping: toInputMapping(false, inRows) })
                 }
               />
               Enable
@@ -271,20 +301,26 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
 
             {im.enabled && (
               <div>
+                {inRows.length === 0 && (
+                  <div style={{ ...sectionNote, marginTop: 10 }}>
+                    No input mappings. Click Add to create one.
+                  </div>
+                )}
+
                 {inRows.map((r, idx) => {
                   const varId = r.variable_id != null ? String(r.variable_id) : "";
                   const targetOpts = inputOptions.filter(
-                    (o) => o.value === r.target || !inRows.some((x, j) => j !== idx && x.target === o.value)
+                    (o) => o.value === r.target || !inRows.some((x) => x.rid !== r.rid && x.target === o.value)
                   );
                   return (
-                    <div key={`in-${r.target}`} style={rowBox}>
+                    <div key={r.rid} style={rowBox}>
                       <div style={rowHead}>
                         <span style={{ ...lbl, marginBottom: 0 }}>Mapping {idx + 1}</span>
                         <button
                           type="button"
                           style={miniBtnDanger}
                           title="Remove mapping"
-                          onClick={() => removeIn(idx)}
+                          onClick={() => removeIn(r.rid)}
                         >
                           ✕ Delete
                         </button>
@@ -292,19 +328,19 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                       <SelectField
                         label="Variable"
                         value={varId}
-                        onChange={(val) => updIn(idx, { variable_id: val ? Number(val) : null })}
+                        onChange={(val) => updIn(r.rid, { variable_id: val ? Number(val) : null })}
                         options={varOptions(varId)}
                       />
                       <Field
                         label="Path (optional, dot notation)"
                         value={r.path}
-                        onChange={(val) => updIn(idx, { path: val })}
+                        onChange={(val) => updIn(r.rid, { path: val })}
                         placeholder="e.g. data.current.temperature_c"
                       />
                       <SelectField
                         label="Target Input"
                         value={r.target}
-                        onChange={(val) => updIn(idx, { target: val })}
+                        onChange={(val) => updIn(r.rid, { target: val })}
                         options={targetOpts}
                       />
                       <div style={sectionNote}>
@@ -340,8 +376,8 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                 disabled={!io}
                 onChange={(e) =>
                   e.target.checked
-                    ? setOutRows(outRows)
-                    : update({ output_mapping: { ...om, enabled: false } })
+                    ? commitOut(outRows.length ? outRows : [blankOut()], true)
+                    : update({ output_mapping: toOutputMapping(false, outRows) })
                 }
               />
               Enable
@@ -349,20 +385,26 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
 
             {om.enabled && (
               <div>
+                {outRows.length === 0 && (
+                  <div style={{ ...sectionNote, marginTop: 10 }}>
+                    No output mappings. Click Add to create one.
+                  </div>
+                )}
+
                 {outRows.map((r, idx) => {
                   const varId = r.variable_id != null ? String(r.variable_id) : "";
                   const usedElsewhere = outRows
-                    .filter((_, j) => j !== idx && outRows[j].variable_id != null)
+                    .filter((x) => x.rid !== r.rid && x.variable_id != null)
                     .map((x) => String(x.variable_id));
                   return (
-                    <div key={`out-${outKey(r) || `blank-${idx}`}`} style={rowBox}>
+                    <div key={r.rid} style={rowBox}>
                       <div style={rowHead}>
                         <span style={{ ...lbl, marginBottom: 0 }}>Mapping {idx + 1}</span>
                         <button
                           type="button"
                           style={miniBtnDanger}
                           title="Remove mapping"
-                          onClick={() => removeOut(idx)}
+                          onClick={() => removeOut(r.rid)}
                         >
                           ✕ Delete
                         </button>
@@ -370,20 +412,20 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                       <SelectField
                         label="Variable"
                         value={varId}
-                        onChange={(val) => updOut(idx, { variable_id: val ? Number(val) : null })}
+                        onChange={(val) => updOut(r.rid, { variable_id: val ? Number(val) : null })}
                         options={varOptions(varId, usedElsewhere)}
                       />
                       <SelectField
                         label="Source"
                         value={r.source}
-                        onChange={(val) => updOut(idx, { source: val })}
+                        onChange={(val) => updOut(r.rid, { source: val })}
                         options={SOURCE_OPTIONS}
                       />
                       {r.source === "node_output" && (
                         <SelectField
                           label="Source Output"
                           value={r.output || ""}
-                          onChange={(val) => updOut(idx, { output: val })}
+                          onChange={(val) => updOut(r.rid, { output: val })}
                           options={outputOptions}
                         />
                       )}
@@ -391,7 +433,7 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                         <Field
                           label="Path (optional, dot notation)"
                           value={r.path}
-                          onChange={(val) => updOut(idx, { path: val })}
+                          onChange={(val) => updOut(r.rid, { path: val })}
                           placeholder="e.g. data.current.temperature_c"
                         />
                       )}
@@ -399,7 +441,7 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                         <Field
                           label="Value"
                           value={r.static_value}
-                          onChange={(val) => updOut(idx, { static_value: val })}
+                          onChange={(val) => updOut(r.rid, { static_value: val })}
                           placeholder="Enter static value…"
                         />
                       )}

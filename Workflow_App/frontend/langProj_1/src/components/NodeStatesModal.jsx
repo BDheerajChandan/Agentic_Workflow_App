@@ -17,6 +17,7 @@ const download = (name, data) => {
 const PALETTE = {
   passed:       { bg: "#dcfce7", border: "#86efac", badge: "#166534", label: "PASSED" },
   failed:       { bg: "#fee2e2", border: "#fca5a5", badge: "#991b1b", label: "FAILED" },
+  paused:       { bg: "#fef9c3", border: "#fde047", badge: "#854d0e", label: "PAUSED" },
   not_executed: { bg: "#e2e8f0", border: "#cbd5e1", badge: "#475569", label: "NOT EXECUTED" },
 };
 

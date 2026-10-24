@@ -4,7 +4,10 @@
 
 import { listVariables } from "../services/api";
 
-export async function buildOutputDisplay({ nodes, flowId, result, traces }) {
+export async function buildOutputDisplay({ nodes, flowId, result, traces, display: resolved }) {
+  // Server-resolved display (same resolver the Chatbot uses) wins; the code below is the fallback.
+  if (resolved !== undefined) return resolved;
+
   const outputNode = nodes.find((n) => n.type === "output");
   const display = outputNode?.data?.display;
   const mode = display?.mode || "entire";
