@@ -93,24 +93,8 @@ function FlowCanvas({ routeSlug, onBack }) {
   const navigate = useNavigate();
   const [importDialog, setImportDialog] = useState(null);
   const [importBusy, setImportBusy] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const [transferMsg, setTransferMsg] = useState(null);
-  const optionsRef = useRef(null);
   const importFileRef = useRef(null);
-
-  useEffect(() => {
-    if (!optionsOpen) return undefined;
-    const handler = (e) => {
-      if (optionsRef.current?.contains(e.target)) return;
-      setOptionsOpen(false);
-    };
-    document.addEventListener("mousedown", handler, true);
-    document.addEventListener("touchstart", handler, true);
-    return () => {
-      document.removeEventListener("mousedown", handler, true);
-      document.removeEventListener("touchstart", handler, true);
-    };
-  }, [optionsOpen]);
 
   const playgroundRef = useRef(null);
   useEffect(() => {
@@ -338,7 +322,6 @@ function FlowCanvas({ routeSlug, onBack }) {
   };
 
   const handleExportFlow = async () => {
-    setOptionsOpen(false);
     setTransferMsg(null);
     try {
       const doc = await buildExport({ flowName, input, nodes, edges, flowId });
@@ -575,8 +558,25 @@ function FlowCanvas({ routeSlug, onBack }) {
           >
             🕘 Run History
           </button>
-          
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <button
+            style={styles.playgroundTopBtn}
+            onClick={() => importFileRef.current?.click()}
+            title="Import a flow from a JSON file"
+          >
+            ⬆ Import
+          </button>
+          <button
+            style={styles.playgroundTopBtn}
+            onClick={handleExportFlow}
+            title="Export this flow as a JSON file"
+          >
+            ⬇ Export
+          </button>
         </div>
+        </div>
+
+        
 
         <div style={styles.topBarCenter}>
           {new Date().toLocaleDateString()} {"  ||  "} {currentTime}
@@ -595,33 +595,6 @@ function FlowCanvas({ routeSlug, onBack }) {
               <div style={styles.logo}>
                 <span style={styles.logoDot} />
                 LangGraph
-              </div>
-              <div ref={optionsRef} style={{ position: "relative" }}>
-                <button
-                  style={{
-                    ...styles.optionsBtn,
-                    borderColor: optionsOpen ? "#6366f1" : "#334155",
-                    color: optionsOpen ? "#818cf8" : "#94a3b8",
-                  }}
-                  onClick={() => setOptionsOpen((o) => !o)}
-                  title="Menu"
-                  aria-label="Menu"
-                >
-                  ☰
-                </button>
-                {optionsOpen && (
-                  <div style={styles.optionsMenu}>
-                    <button
-                      style={styles.optionsItem}
-                      onClick={() => { setOptionsOpen(false); importFileRef.current?.click(); }}
-                    >
-                      Import Flow
-                    </button>
-                    <button style={styles.optionsItem} onClick={handleExportFlow}>
-                      Export Flow
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
             <div style={styles.logoSub}>Visual Flow Builder</div>
@@ -1029,7 +1002,7 @@ const styles = {
 
   playgroundTopBtn: {
     padding: "5px 10px", borderRadius: 8, whiteSpace: "nowrap",
-    border: "1px solid", background: "transparent",
+    border: "1px solid #334155", color: "#94a3b8", background: "transparent",
     fontSize: 12, fontWeight: 600, cursor: "pointer",
     transition: "all 0.15s", letterSpacing: "0.03em",
   },

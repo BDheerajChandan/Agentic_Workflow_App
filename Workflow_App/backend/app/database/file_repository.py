@@ -2,13 +2,13 @@
 
 import uuid
 
+from app.database.connection import get_pool
 from app.files.refs import normalize_refs
 from app.files.registry import FileError
 
 
 async def _pool():
-    from app import db
-    return await db.get_pool()
+    return await get_pool()
 
 
 async def ensure_tables() -> None:
