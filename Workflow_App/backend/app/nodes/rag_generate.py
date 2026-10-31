@@ -11,6 +11,7 @@ Dynamic mode -> api_key / provider / model_name / user_prompt / system_prompt fr
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.providers import DEFAULT_CHAT_MODELS, build_chat_model, normalize_provider
+from app.files.text import plain_text
 
 DEFAULT_MODEL = DEFAULT_CHAT_MODELS["openai"]
 DEFAULT_SYSTEM_PROMPT = (
@@ -32,6 +33,7 @@ def rag_generate_node(state, config):
         or state.get("question")
         or state.get("input")
     )
+    question = plain_text(question)
     scores   = state.get("scores", [])
     avg_confidence = round(sum(scores) / len(scores), 2) if scores else 0
 

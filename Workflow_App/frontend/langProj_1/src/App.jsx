@@ -5,32 +5,49 @@ import { Routes, Route, useNavigate, useParams } from "react-router-dom";
 import FlowListPage from "./components/FlowListPage";
 import FlowCanvas   from "./components/canvas/FlowCanvas";
 import { createFlow } from "./services/api";
+import { flowPath, groupPath } from "./utils/routes";
 
 export default function App() {
-  const navigate = useNavigate();
-
-  const openFlow = (routeSlug) => {
-    navigate(`/flow/${routeSlug}`);
-  };
-
-  const createNew = async () => {
-    const { route_slug } = await createFlow("Untitled Flow");
-    navigate(`/flow/${route_slug}`);
-  };
-
-  const goBack = () => {
-    navigate("/");
-  };
-
   return (
     <Routes>
-      <Route path="/" element={<FlowListPage onOpen={openFlow} onNew={createNew} />} />
-      <Route path="/flow/:routeSlug" element={<FlowCanvasRoute onBack={goBack} />} />
+      <Route path="/" element={<HomeRoute />} />
+      <Route path="/group/:groupId" element={<HomeRoute />} />
+      <Route path="/flow/:routeSlug" element={<FlowCanvasRoute />} />
+      <Route path="/group/:groupId/flow/:routeSlug" element={<FlowCanvasRoute />} />
     </Routes>
   );
 }
 
-function FlowCanvasRoute({ onBack }) {
-  const { routeSlug } = useParams();
-  return <FlowCanvas key={routeSlug} routeSlug={routeSlug} onBack={onBack} />;
+function HomeRoute() {
+  const navigate = useNavigate();
+  const { groupId } = useParams();
+
+  const createNew = async () => {
+    const created = await createFlow("Untitled Flow", groupId ?? null);
+    navigate(flowPath(created.route_slug, groupId));
+  };
+
+  return (
+    <FlowListPage
+      key={groupId || "home"}
+      groupId={groupId}
+      onOpen={(slug, gid) => navigate(flowPath(slug, gid))}
+      onNew={createNew}
+      onOpenGroup={(id) => navigate(groupPath(id))}
+      onHome={() => navigate("/")}
+    />
+  );
+}
+
+function FlowCanvasRoute() {
+  const { groupId, routeSlug } = useParams();
+  const navigate = useNavigate();
+  return (
+    <FlowCanvas
+      key={`${groupId || ""}/${routeSlug}`}
+      routeSlug={routeSlug}
+      groupId={groupId}
+      onBack={() => navigate(groupId ? groupPath(groupId) : "/")}
+    />
+  );
 }

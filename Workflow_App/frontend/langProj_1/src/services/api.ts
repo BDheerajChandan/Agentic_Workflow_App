@@ -60,9 +60,17 @@ export interface SaveFlowPayload {
   input_value?: string;
 }
 
-export const createFlow = async (name = "Untitled Flow") => {
-  const res = await axios.post(`${BASE_URL}/flows/create`, { name });
-  return res.data as { flow_id: number; route_slug: string };
+export const createFlow = async (
+  name = "Untitled Flow",
+  groupId?: string | null,
+  copyOf?: string | null
+) => {
+  const res = await axios.post(`${BASE_URL}/flows/create`, {
+    name,
+    group_id: groupId ?? null,
+    copy_of: copyOf ?? null,
+  });
+  return res.data as { flow_id: number; route_slug: string; name: string; group_id: string | null };
 };
 
 export const saveFlow = async (payload: SaveFlowPayload) => {
@@ -80,8 +88,10 @@ export const getFlow = async (flowId: number) => {
   return res.data as FlowDetail;
 };
 
-export const getFlowByRoute = async (routeSlug: string) => {
-  const res = await axios.get(`${BASE_URL}/flows/route/${routeSlug}`);
+export const getFlowByRoute = async (routeSlug: string, groupId?: string | null) => {
+  const res = await axios.get(`${BASE_URL}/flows/route/${routeSlug}`, {
+    params: groupId ? { group_id: groupId } : {},
+  });
   return res.data as FlowDetail;
 };
 
@@ -120,6 +130,7 @@ export interface FlowSummary {
   last_executed_at: string | null;
   created_at: string;
   updated_at: string;
+  group_id: string | null;
 }
 
 export interface FlowDetail {
@@ -133,6 +144,7 @@ export interface FlowDetail {
   last_executed_at: string | null;
   created_at: string;
   updated_at: string;
+  group_id: string | null;
 }
 
 export interface Execution {
@@ -405,4 +417,51 @@ export const submitHitl = async (
 ) => {
   const res = await axios.post(`${BASE_URL}/hitl/pauses/${pauseId}/submit`, payload);
   return res.data as { result?: any; error?: string | null; paused?: boolean; display?: any; cancelled?: boolean; message?: string };
+};
+
+
+// ─── Groups ───────────────────────────────────────────────────────────────────
+
+export interface FlowGroup {
+  group_id: string;
+  name: string;
+  flow_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export const listGroups = async () => {
+  const res = await axios.get(`${BASE_URL}/groups`);
+  return res.data as { groups: FlowGroup[] };
+};
+
+export const createGroup = async (name: string) => {
+  const res = await axios.post(`${BASE_URL}/groups`, { name });
+  return res.data as FlowGroup;
+};
+
+export const renameGroup = async (groupId: string, name: string) => {
+  const res = await axios.patch(`${BASE_URL}/groups/${groupId}`, { name });
+  return res.data as FlowGroup;
+};
+
+export const deleteGroup = async (groupId: string) => {
+  const res = await axios.delete(`${BASE_URL}/groups/${groupId}`);
+  return res.data as { message: string; moved_flows: number };
+};
+
+export const moveFlow = async (flowId: number, groupId: string | null) => {
+  const res = await axios.patch(`${BASE_URL}/flows/${flowId}/group`, { group_id: groupId });
+  return res.data as { flow_id: number; group_id: string | null; route_slug: string };
+};
+
+export const duplicateFlow = async (
+  flowId: number,
+  opts: { same_group?: boolean; group_id?: string | null } = {}
+) => {
+  const res = await axios.post(`${BASE_URL}/flows/${flowId}/duplicate`, {
+    same_group: opts.same_group ?? true,
+    group_id: opts.group_id ?? null,
+  });
+  return res.data as { flow_id: number; route_slug: string; name: string; group_id: string | null };
 };

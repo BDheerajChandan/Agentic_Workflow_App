@@ -17,6 +17,8 @@ from app.routers.time_router import router as time_router
 from app.routers.python_files_router import router as python_files_router
 from app.routers.hitl_router import router as hitl_router
 from app.routers.files_router import router as files_router
+from app.routers.groups_router import router as groups_router
+from app.app_info import router as app_info_router
 from app.database import file_repository
 from app import runtime
 from app.resume import scheduler_loop
@@ -57,6 +59,8 @@ app.include_router(time_router)
 app.include_router(python_files_router)
 app.include_router(hitl_router)
 app.include_router(files_router)
+app.include_router(groups_router)
+app.include_router(app_info_router)
 
 @app.get("/")
 def root():

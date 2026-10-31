@@ -1,6 +1,7 @@
 # app/nodes/rag_retrieve.py
 
 from app.providers import normalize_provider
+from app.files.text import plain_text
 from app.rag.retriever import retrieve as dynamic_retrieve
 
 
@@ -11,6 +12,7 @@ def rag_retrieve_node(state, config):
         or state.get("question")
     )
 
+    question = plain_text(question)
     source_locality: str = str(config.get("source_locality", "nonlocal")).strip().lower()
     source: str          = str(config.get("source", "")).strip()
     source_type: str     = str(config.get("source_type", "")).strip() or None

@@ -7,17 +7,22 @@ from pydantic import BaseModel
 from typing import Any
 
 from app import db
+from app.flow_copy import duplicate_flow
 
 router = APIRouter(prefix="/flows", tags=["flows"])
 
 
 class CreateFlowRequest(BaseModel):
     name: str = "Untitled Flow"
+    group_id: str | None = None
+    copy_of: str | None = None
 
 
 class CreateFlowResponse(BaseModel):
     flow_id: int
     route_slug: str
+    name: str
+    group_id: str | None = None
 
 
 class SaveFlowRequest(BaseModel):
@@ -33,6 +38,15 @@ class SaveFlowResponse(BaseModel):
     message: str
 
 
+class MoveFlowRequest(BaseModel):
+    group_id: str | None = None
+
+
+class DuplicateRequest(BaseModel):
+    same_group: bool = True
+    group_id: str | None = None
+
+
 def _fmt(flow: dict) -> dict:
     for key in ("last_executed_at", "created_at", "updated_at"):
         if flow.get(key) is not None:
@@ -40,9 +54,19 @@ def _fmt(flow: dict) -> dict:
     return flow
 
 
+async def _check_group(group_id: str | None) -> None:
+    if group_id is not None and not await db.get_group(group_id):
+        raise HTTPException(status_code=404, detail="Group not found.")
+
+
 @router.post("/create", response_model=CreateFlowResponse)
 async def create_flow(payload: CreateFlowRequest):
-    created = await db.create_flow(name=payload.name)
+    await _check_group(payload.group_id)
+    created = await db.create_flow(
+        name=(payload.name or "").strip() or "Untitled Flow",
+        group_id=payload.group_id,
+        copy_of=payload.copy_of,
+    )
     return CreateFlowResponse(**created)
 
 
@@ -65,10 +89,12 @@ async def list_flows():
 
 
 @router.get("/route/{route_slug}")
-async def get_flow_by_route(route_slug: str):
+async def get_flow_by_route(route_slug: str, group_id: str | None = None):
     flow = await db.get_flow_by_route(route_slug)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found.")
+    if group_id is not None and flow.get("group_id") != group_id:
+        raise HTTPException(status_code=404, detail="Flow not found in this group.")
     return _fmt(flow)
 
 
@@ -78,6 +104,28 @@ async def get_flow(flow_id: int):
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found.")
     return _fmt(flow)
+
+
+@router.patch("/{flow_id}/group")
+async def move_flow(flow_id: int, payload: MoveFlowRequest):
+    await _check_group(payload.group_id)
+    if not await db.set_flow_group(flow_id, payload.group_id):
+        raise HTTPException(status_code=404, detail="Flow not found.")
+    return {
+        "flow_id": flow_id,
+        "group_id": payload.group_id,
+        "route_slug": await db.get_route_for_flow(flow_id),
+    }
+
+
+@router.post("/{flow_id}/duplicate", response_model=CreateFlowResponse)
+async def duplicate(flow_id: int, payload: DuplicateRequest):
+    if not payload.same_group:
+        await _check_group(payload.group_id)
+    created = await duplicate_flow(flow_id, payload.same_group, payload.group_id)
+    if not created:
+        raise HTTPException(status_code=404, detail="Flow not found.")
+    return CreateFlowResponse(**created)
 
 
 @router.get("/{flow_id}/executions")

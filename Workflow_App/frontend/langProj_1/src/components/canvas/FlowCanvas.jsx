@@ -27,6 +27,7 @@ import SettingsPanel from "../../registry/SettingsPanel";
 import NodeStatesModal from "../NodeStatesModal";
 import RunHistoryModal from "../RunHistoryModal";
 import { buildOutputDisplay } from "../../utils/outputDisplay";
+import { flowPath } from "../../utils/routes";
 import { downloadJson } from "../../utils/download";
 import { buildExport, parseImport, prepareImport } from "../../utils/flowTransfer";
 
@@ -45,16 +46,16 @@ const SIDEBAR_NODES = [
 ];
 
 // ─── Wrapper ──────────────────────────────────────────────────────────────────
-export default function FlowCanvasWrapper({ routeSlug, onBack }) {
+export default function FlowCanvasWrapper({ routeSlug, groupId, onBack }) {
   return (
     <ReactFlowProvider>
-      <FlowCanvas routeSlug={routeSlug} onBack={onBack} />
+      <FlowCanvas routeSlug={routeSlug} groupId={groupId} onBack={onBack} />
     </ReactFlowProvider>
   );
 }
 
 // ─── Main Canvas ──────────────────────────────────────────────────────────────
-function FlowCanvas({ routeSlug, onBack }) {
+function FlowCanvas({ routeSlug, groupId, onBack }) {
   const reactFlowWrapper = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
 
@@ -127,7 +128,11 @@ function FlowCanvas({ routeSlug, onBack }) {
     if (!routeSlug) return;
     (async () => {
       try {
-        const flow = await getFlowByRoute(routeSlug);
+        const flow = await getFlowByRoute(routeSlug, groupId);
+        if (!groupId && flow.group_id) {
+          navigate(flowPath(routeSlug, flow.group_id), { replace: true });
+          return;
+        }
         const loadedNodes = (flow.nodes || []).map((n) => ({
           ...n,
           position: n.position || { x: 100, y: 100 },
@@ -149,7 +154,7 @@ function FlowCanvas({ routeSlug, onBack }) {
         setLoadError("Failed to load flow.");
       }
     })();
-  }, [routeSlug]); // eslint-disable-line
+  }, [routeSlug, groupId]); // eslint-disable-line
 
   const onConnect = useCallback(
     (params) =>
@@ -274,6 +279,16 @@ function FlowCanvas({ routeSlug, onBack }) {
       .map((f) => ({ file_id: f.file_id }));
   };
 
+    const playgroundFiles = (extra = []) => {
+    const seen = new Set();
+    const list = extra.length
+      ? extra
+      : nodes.filter((n) => n.type === "start").flatMap((n) => n.data?.files || []);
+    return list
+      .filter((f) => f?.file_id && !seen.has(f.file_id) && seen.add(f.file_id))
+      .map((f) => ({ file_id: f.file_id }));
+  };
+
   // ── Run (SSE-driven execution highlighting) ───────────────────────────────
   const handleRun = async () => {
     setError(null);
@@ -386,12 +401,12 @@ function FlowCanvas({ routeSlug, onBack }) {
   };
 
   const applyNew = async (payload) => {
-    const created = await createFlow(payload.name);
+    const created = await createFlow(payload.name, groupId ?? null, payload.name);
     try {
       const prepared = await prepareImport(payload, created.flow_id);
       await saveFlow({
         flow_id: created.flow_id,
-        name: prepared.name,
+        name: created.name,
         nodes: prepared.nodes,
         edges: prepared.edges,
         input_value: prepared.input_value,
@@ -400,7 +415,7 @@ function FlowCanvas({ routeSlug, onBack }) {
       await deleteFlow(created.flow_id).catch(() => {});
       throw err;
     }
-    navigate(`/flow/${created.route_slug}`);
+    navigate(flowPath(created.route_slug, groupId));
   };
 
   const confirmImport = async (mode) => {
@@ -508,9 +523,8 @@ function FlowCanvas({ routeSlug, onBack }) {
 
       <div style={styles.topBar}>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 1, minWidth: 0 }}>
           <button style={styles.backBtn} onClick={onBack}>← Back</button>
-          <span style={styles.topBarLeft}>🚀 LangGraph Workflow Builder</span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -589,7 +603,7 @@ function FlowCanvas({ routeSlug, onBack }) {
 
       <div style={styles.body}>
 
-        <aside style={styles.sidebar}>
+        <aside className="lg-sidebar" style={styles.sidebar}>
           <div style={styles.sidebarHeader}>
             <div style={styles.logoRow}>
               <div style={styles.logo}>
@@ -747,7 +761,7 @@ function FlowCanvas({ routeSlug, onBack }) {
                 const traces = [];
                 let display;
                 const result = await runGraphStream(
-                  { nodes, edges, input: message, flow_id: flowId, files: collectFiles(files) },
+                  { nodes, edges, input: message, flow_id: flowId, files: playgroundFiles(files) },
                   (evt) => {
                     if (evt.type === "result" && evt.display !== undefined) display = evt.display;
                     if (evt.type === "node") {
@@ -949,15 +963,15 @@ function SidebarNode({ type, label, icon, color, bg, border, desc, onDragStart }
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = {
   root: {
-    width: "100vw", height: "100vh",
+    width: "100%", height: "100%", minWidth: 0, minHeight: 0,
     display: "flex", flexDirection: "column",
     overflow: "hidden", background: "#020617",
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
   },
 
   topBar: {
-    position: "fixed",
-    top: 0, left: 0, right: 0,
+    position: "relative",
+    width: "100%",
     height: TOPBAR_HEIGHT,
     background: "#0f172a",
     borderBottom: "1px solid #1e293b",
@@ -966,12 +980,13 @@ const styles = {
     padding: "0 12px",
     zIndex: 3000,
     color: "#e2e8f0", fontSize: 13, fontWeight: 600,
-    gap: 8, flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden",
+    gap: 8, flexShrink: 0, whiteSpace: "nowrap", overflowX: "auto", overflowY: "hidden",
   },
 
   body: {
-    marginTop: TOPBAR_HEIGHT,
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     display: "flex",
     overflow: "hidden",
     position: "relative",
@@ -982,7 +997,10 @@ const styles = {
     border: "1px solid #334155", background: "transparent",
     color: "#94a3b8", fontSize: 12, cursor: "pointer", fontWeight: 600,
   },
-  topBarLeft:   { color: "#818cf8", letterSpacing: "0.02em", fontSize: 12, whiteSpace: "nowrap" },
+  topBarLeft:   {
+    color: "#818cf8", letterSpacing: "0.02em", fontSize: 12, whiteSpace: "nowrap",
+    minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+  },
   topBarCenter: { color: "#38bdf8", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 },
   topBarRight:  { color: "#94a3b8", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 },
 
@@ -1138,7 +1156,7 @@ optionsMenu: {
   },
   spinner: { display: "inline-block", animation: "spin 0.8s linear infinite", fontSize: 16 },
 
-  canvas: { flex: 1, position: "relative" },
+  canvas: { flex: 1, position: "relative", minWidth: 0, minHeight: 0 },
   controls: { background: "#0a0f1e", border: "1px solid #1e293b", borderRadius: 10 },
   emptyState: {
     position: "absolute", top: "50%", left: "50%",

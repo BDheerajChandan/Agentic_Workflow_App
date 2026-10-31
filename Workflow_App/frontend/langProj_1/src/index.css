@@ -50,3 +50,17 @@ body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ── Open-link icon ───────────────────────────────────────── */
+.open-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px; color: #4801ee;
+  border: 1px solid transparent; text-decoration: none; transition: all 0.15s;
+}
+.open-link:hover,
+.open-link:focus-visible { background: rgba(72, 1, 238, 0.12); border-color: #4801ee; outline: none; }
+
+/* ── Small screens ────────────────────────────────────────── */
+@media (max-width: 760px) {
+  .lg-sidebar { width: 200px !important; min-width: 200px !important; padding: 14px 10px !important; }
+}

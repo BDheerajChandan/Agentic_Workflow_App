@@ -17,6 +17,7 @@ from app.database import file_repository
 from app.files.registry import FileError
 from app.hitl_service import submit_interaction
 from app.pause import PauseRequested
+from app.files.text import is_file_result
 from app.resume import paused_result, store_pause
 
 router = APIRouter(prefix="/bots", tags=["bots"])
@@ -58,19 +59,20 @@ class InteractionSubmitRequest(BaseModel):
 class DeleteSessionsRequest(BaseModel):
     session_ids: list[str]
 
-
 def _to_text(value) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
         return value.strip()
+    if is_file_result(value):
+        import json
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, dict):
         if isinstance(value.get("answer"), str):
             return value["answer"].strip()
         import json
-        return json.dumps(value, indent=2)
+        return json.dumps(value, indent=2, ensure_ascii=False)
     return str(value)
-
 
 def _extract_reply(result) -> str:
     if not isinstance(result, dict):

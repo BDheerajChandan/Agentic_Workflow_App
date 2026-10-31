@@ -188,4 +188,24 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_paused_runs_flow ON paused_runs(flow_id, node_id);"
         )
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_groups (
+                group_id   TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        """)
+        await conn.execute(
+            "ALTER TABLE flows ADD COLUMN IF NOT EXISTS group_id TEXT "
+            "REFERENCES flow_groups(group_id) ON DELETE SET NULL;"
+        )
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_flows_group ON flows(group_id);")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_copy_counters (
+                base_name  TEXT PRIMARY KEY,
+                copy_count INTEGER NOT NULL DEFAULT 0
+            );
+        """)
+
     print("✅ Database tables verified / created.")
