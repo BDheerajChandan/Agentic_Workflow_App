@@ -135,10 +135,10 @@ a.btn { text-decoration: none; display: inline-block; }
 
 /* ── My Bots cards ───────────────────────────────────────── */
 .setup-card-wide {
-  max-width: 1300px;
+  max-width: 100%;
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 20px;
   box-shadow: none;
 }
 
