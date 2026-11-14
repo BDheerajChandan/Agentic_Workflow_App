@@ -12,5 +12,6 @@ Chroma_db
 *.rtf
 *.odt
 
+
 download/
 aqi_cache/
