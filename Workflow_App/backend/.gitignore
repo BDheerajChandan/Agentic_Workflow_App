@@ -4,7 +4,6 @@ Chroma_db
 *.pyc
 .env
 
-*.txt
 *.pdf
 *.pptx
 *.doc
