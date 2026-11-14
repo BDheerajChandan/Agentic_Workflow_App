@@ -30,6 +30,8 @@ import { buildOutputDisplay } from "../../utils/outputDisplay";
 import { flowPath } from "../../utils/routes";
 import { downloadJson } from "../../utils/download";
 import { buildExport, parseImport, prepareImport } from "../../utils/flowTransfer";
+import { migrateLegacyIfElse } from "../../utils/ifElseMigration";
+import { switchDuplicateErrors } from "../../utils/caseValue";
 
 let _id = 1;
 const getNodeId = () => `node_${_id++}`;
@@ -137,8 +139,10 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
           ...n,
           position: n.position || { x: 100, y: 100 },
         }));
-        setNodes(loadedNodes);
-        setEdges(flow.edges || []);
+        const mig = migrateLegacyIfElse(loadedNodes, flow.edges || []);
+        setNodes(mig.nodes);
+        setEdges(mig.edges);
+        if (mig.warnings.length) setTransferMsg({ ok: false, text: mig.warnings.join(" ") });
         setInput(flow.input_value || "");
         setFlowName(flow.name);
         setFlowId(flow.id);
@@ -212,6 +216,12 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
   );
 
   const handleSave = async () => {
+    const dupErrors = switchDuplicateErrors(nodes);
+    if (dupErrors.length) {
+      setSaveMsg("✗ Fix Switch cases first");
+      setTransferMsg({ ok: false, text: dupErrors.join(" ") });
+      return;
+    }
     setSaving(true);
     setSaveMsg("");
     try {
@@ -341,7 +351,7 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
     try {
       const doc = await buildExport({ flowName, input, nodes, edges, flowId });
       const base = (flowName || "workflow").trim().replace(/[^\w.-]+/g, "_") || "workflow";
-      downloadJson(`${base}_export.json`, doc);
+      downloadJson(`${base}.json`, doc);
       const n = doc.file_references.length;
       setTransferMsg({
         ok: true,
@@ -571,6 +581,15 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
             onClick={() => setHistoryOpen(true)}
           >
             🕘 Run History
+          </button>
+
+          <button
+            style={{ ...styles.playgroundTopBtn, borderColor: "#334155", color: "#94a3b8", opacity: flowId ? 1 : 0.5 }}
+            disabled={!flowId}
+            onClick={() => window.open(`/flows/${flowId}/documentation`, "_blank", "noopener")}
+            title="Open the workflow documentation in a new tab"
+          >
+            📝 Documentation
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           <button

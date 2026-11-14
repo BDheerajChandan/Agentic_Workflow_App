@@ -310,7 +310,7 @@ export default function SettingsPanel({
         <div>
           <div style={panelTitle}>Node Settings</div>
           <div style={panelSub}>
-            {node.type} · {selectedNodeId}
+            {localData.aka ? `${localData.aka} (${node.type})` : node.type} · {selectedNodeId}
           </div>
         </div>
         <button style={closeBtn} onClick={onClose}>

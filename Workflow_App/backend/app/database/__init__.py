@@ -11,4 +11,5 @@ from app.database import (  # noqa: F401
     variable_repository,
     hitl_repository,
     file_repository,
+    documentation_repository,
 )

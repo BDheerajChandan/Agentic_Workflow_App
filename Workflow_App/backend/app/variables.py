@@ -194,7 +194,7 @@ def parse_variable_config(node_data: dict | None, node_type: str | None = None) 
     if not isinstance(cfg, dict) or not cfg.get("enabled"):
         return None
 
-    io = get_node_io(node_type)
+    io = get_node_io(node_type, node_data)
 
     if "input_mapping" not in cfg and "output_mapping" not in cfg and "mode" in cfg:
         cfg = _upgrade_legacy(cfg, io)

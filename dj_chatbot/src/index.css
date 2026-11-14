@@ -135,10 +135,10 @@ a.btn { text-decoration: none; display: inline-block; }
 
 /* ── My Bots cards ───────────────────────────────────────── */
 .setup-card-wide {
-  max-width: 100%;
+  max-width: 1300px;
   background: transparent;
   border: none;
-  padding: 20px;
+  padding: 0;
   box-shadow: none;
 }
 
@@ -260,3 +260,52 @@ a.btn { text-decoration: none; display: inline-block; }
 .input-area .input-bar { border-top: none; align-items: stretch; }
 .bubble-card { max-width: 560px; width: 100%; padding: 0; background: transparent; border: none; }
 .bubble-files { margin-top: 6px; font-size: 11px; opacity: 0.85; }
+
+/* ── Read-only workflow documentation ────────────────────── */
+.doc-wrap { width: 100%; max-width: 900px; height: fit-content; display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px; }
+.doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.doc-link { background: transparent; border: none; color: #818cf8; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0; font-family: inherit; }
+.doc-readonly {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #38bdf8;
+  border: 1px solid rgba(56,189,248,0.35); background: rgba(56,189,248,0.08); border-radius: 999px; padding: 3px 10px;
+}
+.doc-card { background: #0a0f1e; border: 1px solid #1e293b; border-radius: 14px; padding: 18px; }
+.doc-h2 { font-size: 15px; font-weight: 700; color: #818cf8; margin-bottom: 8px; }
+.doc-section { margin-bottom: 14px; }
+.doc-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.doc-text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; color: #e2e8f0; }
+.doc-empty { color: #475569; }
+.doc-empty-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.doc-case { margin-top: 12px; padding: 12px; border: 1px solid #1e293b; border-radius: 10px; background: #0f172a; }
+.doc-case-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.doc-case-name { font-size: 13px; font-weight: 700; word-break: break-word; }
+.doc-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.06em; }
+.doc-badge-not_run { color: #94a3b8; background: rgba(148,163,184,0.12); }
+.doc-badge-passed { color: #34d399; background: rgba(52,211,153,0.12); }
+.doc-badge-failed { color: #fca5a5; background: rgba(239,68,68,0.12); }
+
+/* ── Streaming / markdown ────────────────────────────────── */
+.stream-caret { display: inline-block; margin-left: 2px; color: #818cf8; animation: caret-blink 1s steps(1) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+.bubble-note { margin-top: 6px; font-size: 11px; color: #94a3b8; }
+.retry-btn { margin-top: 8px; }
+
+.bubble-md { white-space: normal; }
+.bubble-md > *:first-child { margin-top: 0; }
+.bubble-md > *:last-child { margin-bottom: 0; }
+.bubble-md p { margin: 0 0 10px; }
+.bubble-md ul, .bubble-md ol { margin: 0 0 10px; padding-left: 22px; }
+.bubble-md li { margin: 2px 0; }
+.bubble-md h1, .bubble-md h2, .bubble-md h3, .bubble-md h4 { margin: 12px 0 6px; line-height: 1.3; color: #e2e8f0; }
+.bubble-md h1 { font-size: 17px; } .bubble-md h2 { font-size: 15px; } .bubble-md h3, .bubble-md h4 { font-size: 13px; }
+.bubble-md a { color: #38bdf8; }
+.bubble-md blockquote { margin: 0 0 10px; padding: 2px 10px; border-left: 3px solid #475569; color: #94a3b8; }
+.bubble-md hr { border: none; border-top: 1px solid #334155; margin: 12px 0; }
+.bubble-md code { font-family: inherit; font-size: 12px; background: rgba(2,6,23,0.55); border-radius: 5px; padding: 1px 5px; }
+.bubble-md pre {
+  margin: 0 0 10px; padding: 10px 12px; border-radius: 8px; background: #020617;
+  border: 1px solid #1e293b; overflow-x: auto; white-space: pre;
+}
+.bubble-md pre code { background: transparent; padding: 0; font-size: 12px; line-height: 1.5; }
+.bubble-md table { border-collapse: collapse; margin: 0 0 10px; display: block; overflow-x: auto; }
+.bubble-md th, .bubble-md td { border: 1px solid #334155; padding: 4px 8px; font-size: 12px; }

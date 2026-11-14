@@ -28,6 +28,7 @@ export default function Sidebar({
   onDeleteSession,
   onDeleteSessions,
   onDeleteAll,
+  onOpenDocumentation,
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(bot.name);
@@ -133,6 +134,9 @@ export default function Sidebar({
               {bot.workflow_name} · {bot.bot_id}
             </div>
             <button className="btn btn-ghost btn-sm btn-block" onClick={startEdit}>✎ Rename</button>
+            <button className="btn btn-ghost btn-sm btn-block" onClick={onOpenDocumentation}>
+              📄 Workflow Documentation
+            </button>
           </>
         )}
       </div>

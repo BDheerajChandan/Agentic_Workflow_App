@@ -4,6 +4,7 @@ import React from "react";
 import { Routes, Route, useNavigate, useParams } from "react-router-dom";
 import FlowListPage from "./components/FlowListPage";
 import FlowCanvas   from "./components/canvas/FlowCanvas";
+import DocumentationPage from "./components/documentation/DocumentationPage";
 import { createFlow } from "./services/api";
 import { flowPath, groupPath } from "./utils/routes";
 
@@ -14,6 +15,7 @@ export default function App() {
       <Route path="/group/:groupId" element={<HomeRoute />} />
       <Route path="/flow/:routeSlug" element={<FlowCanvasRoute />} />
       <Route path="/group/:groupId/flow/:routeSlug" element={<FlowCanvasRoute />} />
+      <Route path="/flows/:flowId/documentation" element={<DocumentationPage />} />
     </Routes>
   );
 }

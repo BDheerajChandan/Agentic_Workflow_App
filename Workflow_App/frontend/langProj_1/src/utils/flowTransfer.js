@@ -4,6 +4,7 @@
 
 import { listVariables, createVariable, BASE_URL } from "../services/api";
 import { nodeTypes } from "../registry/node_registration";
+import { migrateLegacyIfElse } from "./ifElseMigration";
 
 export const FLOW_FORMAT = "langgraph-flow";
 export const FLOW_VERSION = 2;
@@ -244,14 +245,17 @@ export async function prepareImport(payload, flowId) {
     nodes.push({ ...n, position: n.position || { x: 100, y: 100 }, data });
   }
 
+  const edges = payload.edges.map((e, i) => ({
+    ...e,
+    id: e.id || `edge_${e.source}_${e.target}_${i}`,
+  }));
+  const mig = migrateLegacyIfElse(nodes, edges);
+
   return {
     name: payload.name,
     input_value: payload.input_value,
-    nodes,
-    edges: payload.edges.map((e, i) => ({
-      ...e,
-      id: e.id || `edge_${e.source}_${e.target}_${i}`,
-    })),
-    warnings,
+    nodes: mig.nodes,
+    edges: mig.edges,
+    warnings: [...warnings, ...mig.warnings],
   };
 }

@@ -12,6 +12,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.providers import DEFAULT_CHAT_MODELS, build_chat_model, normalize_provider
 from app.files.text import plain_text
+from app.streaming import chunk_text
 
 DEFAULT_MODEL = DEFAULT_CHAT_MODELS["openai"]
 DEFAULT_SYSTEM_PROMPT = (
@@ -91,25 +92,46 @@ def rag_generate_node(state, config):
         HumanMessage(content=human_content),
     ]
 
-    llm      = _get_llm(provider=provider, api_key=api_key, model_name=model_name)
-    response = llm.invoke(messages)
+    llm    = _get_llm(provider=provider, api_key=api_key, model_name=model_name)
+    stream = cfg.get("__stream")
+
+    if callable(stream):
+        # Live streaming: real provider chunks are forwarded as they arrive.
+        node_id = cfg.get("__node_id")
+        parts = []
+        chunks = llm.stream(messages)
+        try:
+            for chunk in chunks:
+                delta = chunk_text(chunk)
+                if delta:
+                    parts.append(delta)
+                    stream(node_id, delta)
+        finally:
+            close = getattr(chunks, "close", None)
+            if callable(close):
+                close()
+        answer = "".join(parts)
+        if not answer.strip():
+            raise ValueError("RAG Generate: the model returned an empty response.")
+    else:
+        answer = llm.invoke(messages).content
 
     print("\n💡 GENERATED ANSWER:\n")
-    print(response.content)
+    print(answer)
     print("\n" + "=" * 60 + "\n")
 
     return {
         **state,
-        "current_value": response.content,
-        "answer": response.content,
+        "current_value": answer,
+        "answer": answer,
         "final_output": {
-            "answer": response.content,
+            "answer": answer,
             "confidence": avg_confidence,
             "documents_used": len(docs),
         },
         "data": {
             **state.get("data", {}),
-            "answer": response.content,
+            "answer": answer,
             "confidence": avg_confidence,
             "documents_used": len(docs),
         },

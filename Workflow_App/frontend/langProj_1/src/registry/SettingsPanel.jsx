@@ -6,6 +6,7 @@ import { settingsRegistry, variableCapableNodes } from "./node_registration";
 import VariableSection from "./settings/VariableSection";
 import {
   panel, panelHeader, panelTitle, panelSub, closeBtn, panelBody, infoStyle, infoBox,
+  fieldWrap, lbl, inp, miniBtn, miniBtnDisabled,
 } from "./settings/styles";
 
 class SettingsBoundary extends React.Component {
@@ -87,7 +88,7 @@ export default function SettingsPanel({
         <div>
           <div style={panelTitle}>Node Settings</div>
           <div style={panelSub}>
-            {node.type} · {selectedNodeId}
+            {localData.aka ? `${localData.aka} (${node.type})` : node.type} · {selectedNodeId}
           </div>
         </div>
         <button style={closeBtn} onClick={onClose}>
@@ -95,6 +96,26 @@ export default function SettingsPanel({
         </button>
       </div>
       <div style={panelBody}>
+        <div style={fieldWrap}>
+          <label style={lbl}>AKA / Display Name (optional)</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              value={localData.aka ?? ""}
+              placeholder={node.type}
+              maxLength={60}
+              onChange={(e) => patch({ aka: e.target.value })}
+              style={{ ...inp, flex: 1 }}
+            />
+            <button
+              type="button"
+              style={{ ...miniBtn, ...(localData.aka ? {} : miniBtnDisabled) }}
+              disabled={!localData.aka}
+              onClick={() => patch({ aka: "" })}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
         {NodeSettings ? (
           <SettingsBoundary label="Node settings" resetKey={selectedNodeId}>
             <NodeSettings

@@ -101,7 +101,7 @@ export default function OutputSettings({
                   checked={nodeIds.includes(n.id)}
                   onChange={() => update({ node_ids: toggle(nodeIds, n.id) })}
                 />
-                {n.type} · {n.id}
+                {n.data?.aka ? `${n.data.aka} (${n.type})` : n.type} · {n.id}
               </label>
             ))}
           </div>

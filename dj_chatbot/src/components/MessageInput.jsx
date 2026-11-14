@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { API_BASE } from "../services/botApi";
 import { useAttachments, AttachButton, AttachmentList } from "./files/AttachmentBar";
 
-export default function MessageInput({ onSend, disabled, loading, botId, sessionId }) {
+export default function MessageInput({ onSend, onStop, disabled, loading, streaming, botId, sessionId }) {
   const [text, setText] = useState("");
   const att = useAttachments(API_BASE, { bot_id: botId, session_id: sessionId });
 
@@ -37,9 +37,15 @@ export default function MessageInput({ onSend, disabled, loading, botId, session
           onKeyDown={onKeyDown}
           placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
         />
-        <button className="btn btn-primary send-btn" onClick={submit} disabled={!canSend}>
-          {loading ? "Running…" : "Send"}
-        </button>
+        {streaming ? (
+          <button className="btn btn-ghost send-btn" onClick={onStop} title="Stop generation">
+            ■ Stop
+          </button>
+        ) : (
+          <button className="btn btn-primary send-btn" onClick={submit} disabled={!canSend}>
+            {loading ? "Running…" : "Send"}
+          </button>
+        )}
       </div>
     </div>
   );

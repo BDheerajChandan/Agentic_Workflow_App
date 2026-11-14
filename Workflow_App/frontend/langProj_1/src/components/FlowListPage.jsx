@@ -9,6 +9,7 @@ import CreateBotModal from "./CreateBotModal";
 import OpenBotModal from "./OpenBotModal";
 import { flowPath, groupPath } from "../utils/routes";
 import { useAppInfo, formatAppTitle } from "../utils/appInfo";
+import { exportWorkflowsZip } from "../utils/bulkExport";
 
 const TOPBAR_HEIGHT = 42;
 
@@ -58,6 +59,8 @@ export default function FlowListPage({ groupId, onOpen, onNew, onOpenGroup, onHo
   const [groupModal,   setGroupModal]   = useState(null); // { mode: "create" | "rename", group? }
   const [actionTarget, setActionTarget] = useState(null); // { mode: "move" | "copy", flow }
   const [notice,       setNotice]       = useState(null);
+  const [downloadKey,  setDownloadKey]  = useState(null);
+  const downloading = downloadKey !== null;
 
   const appTitle = formatAppTitle("DJ Workflow Builder", useAppInfo());
 
@@ -124,6 +127,31 @@ export default function FlowListPage({ groupId, onOpen, onNew, onOpenGroup, onHo
     });
     await load();
   };
+
+  const runDownload = async (key, scope) => {
+    if (downloadKey) return;
+    setDownloadKey(key);
+    setNotice(null);
+    try {
+      const r = await exportWorkflowsZip(scope);
+      setNotice({
+        ok: true,
+        text: r.workflowCount
+          ? `✓ Downloaded ${r.zipName}: ${r.workflowCount} workflow(s) in ${r.folders.length} folder(s). Attached files are exported as references only.`
+          : `✓ Downloaded ${r.zipName}: no workflows found, so the folder(s) are empty.`,
+      });
+    } catch (err) {
+      setNotice({ ok: false, text: `Download failed: ${apiError(err, "ZIP generation failed.")}` });
+    } finally {
+      setDownloadKey(null);
+    }
+  };
+
+  const downloadAll = () =>
+    runDownload("all", groupId ? { type: "group", groupId } : { type: "all" });
+
+  const downloadGroup = (g) =>
+    runDownload(`group:${g.group_id}`, { type: "group", groupId: g.group_id });
 
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -202,6 +230,14 @@ export default function FlowListPage({ groupId, onOpen, onNew, onOpenGroup, onHo
                 📁 Create Group
               </button>
             )}
+            <button
+              style={{ ...styles.chatbotBtn, opacity: downloading ? 0.6 : 1 }}
+              disabled={downloading}
+              onClick={downloadAll}
+              title={groupId ? "Download all workflows of this group (.zip)" : "Download every standalone and grouped workflow (.zip)"}
+            >
+              {downloadKey === "all" ? "Preparing…" : "⬇ Download All (.zip)"}
+            </button>
             {!groupMissing && (
               <button style={styles.newBtn} onClick={onNew}>＋ Create New Flow</button>
             )}
@@ -269,7 +305,17 @@ export default function FlowListPage({ groupId, onOpen, onNew, onOpenGroup, onHo
                     </div>
                   </div>
                   <div style={styles.cardFooter}>
-                    <span style={{ fontSize: 11, color: "#1e293b" }}>{g.flow_count} flow(s)</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: "#1e293b" }}>{g.flow_count} flow(s)</span>
+                      <button
+                        style={{ ...styles.openBotBtn, opacity: downloading ? 0.6 : 1 }}
+                        disabled={downloading}
+                        title={`Download only the workflows of "${g.name}" (.zip)`}
+                        onClick={(e) => { e.stopPropagation(); downloadGroup(g); }}
+                      >
+                        {downloadKey === `group:${g.group_id}` ? "Preparing…" : "⬇ Download"}
+                      </button>
+                    </div>
                     <OpenLink
                       href={groupPath(g.group_id)}
                       label="Open group"

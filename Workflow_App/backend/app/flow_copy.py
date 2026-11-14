@@ -63,4 +63,14 @@ async def duplicate_flow(flow_id: int, same_group: bool = True, group_id: str | 
     except Exception:
         await db.delete_flow(created["flow_id"])
         raise
+
+    try:
+        doc = await db.get_documentation(flow_id)
+        if doc:
+            content = dict(doc["content"])
+            if (content.get("flow_name") or "").strip() in ("", src["name"]):
+                content["flow_name"] = ""
+            await db.create_documentation(created["flow_id"], content, doc["test_cases"])
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  Failed to copy documentation: {exc}")
     return created

@@ -208,4 +208,15 @@ async def init_db() -> None:
             );
         """)
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_documentation (
+                flow_id    INTEGER PRIMARY KEY REFERENCES flows(id) ON DELETE CASCADE,
+                content    JSONB NOT NULL DEFAULT '{}',
+                test_cases JSONB NOT NULL DEFAULT '[]',
+                version    INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        """)
+
     print("✅ Database tables verified / created.")

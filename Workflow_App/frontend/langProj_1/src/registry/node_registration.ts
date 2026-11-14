@@ -13,6 +13,11 @@ import PythonFunctionsNode from "../nodes/python_functions/PythonFunctionsNode.j
 import TimeOperationNode from "../nodes/time_operation/TimeOperationNode.jsx";
 import HitlNode from "../nodes/hitl/HitlNode.jsx";
 import FileReaderNode from "../nodes/file_reader/FileReaderNode.jsx";
+import IfElseNode from "../nodes/if_else/IfElseNode.jsx";
+import SwitchNode from "../nodes/switch/SwitchNode.jsx";
+import AqiNode from "../nodes/aqi/AqiNode.jsx";
+import NlpNode from "../nodes/nlp/NlpNode.jsx";
+import SearchUrlsNode from "../nodes/search_urls/SearchUrlsNode.jsx";
 
 import StartSettings from "./settings/startSettings.jsx";
 import TypeConverterSettings from "./settings/typeConverterSettings.jsx";
@@ -26,6 +31,11 @@ import PythonFunctionsSettings from "./settings/pythonFunctionsSettings.jsx";
 import TimeOperationSettings from "./settings/timeOperationSettings.jsx";
 import HitlSettings from "./settings/hitlSettings.jsx";
 import FileReaderSettings from "./settings/fileReaderSettings.jsx";
+import IfElseSettings from "./settings/ifElseSettings.jsx";
+import SwitchSettings from "./settings/switchSettings.jsx";
+import AqiSettings from "./settings/aqiSettings.jsx";
+import NlpSettings from "./settings/nlpSettings.jsx";
+import SearchUrlsSettings from "./settings/searchUrlsSettings.jsx";
 
 export const nodeTypes = {
   start: StartNode,
@@ -42,6 +52,11 @@ export const nodeTypes = {
   time_operation: TimeOperationNode,
   hitl: HitlNode,
   file_reader: FileReaderNode,
+  if_else: IfElseNode,
+  switch: SwitchNode,
+  aqi: AqiNode,
+  nlp: NlpNode,
+  search_urls: SearchUrlsNode,
 };
 
 export const settingsRegistry: Record<string, any> = {
@@ -59,8 +74,12 @@ export const settingsRegistry: Record<string, any> = {
   time_operation: TimeOperationSettings,
   hitl: HitlSettings,
   file_reader: FileReaderSettings,
+  if_else: IfElseSettings,
+  switch: SwitchSettings,
+  aqi: AqiSettings,
+  nlp: NlpSettings,
+  search_urls: SearchUrlsSettings,
 };
-
 
 // Nodes whose Settings Panel shows the Variable (Assign / Read) section.
 // Add a node type here to enable variables for it — no other change required.
@@ -77,6 +96,11 @@ export const variableCapableNodes = new Set<string>([
   "time_operation",
   "hitl",
   "file_reader",
+  "if_else",
+  "switch",
+  "aqi",
+  "nlp",
+  "search_urls",
 ]);
 
 // Default node.data applied when a node is dropped on the canvas.
@@ -121,6 +145,37 @@ export const nodeDefaults: Record<string, Record<string, any>> = {
     max_wait_seconds: 86400,
   },
   file_reader: { include_results: true },
+  if_else: {
+    description: "",
+    true_label: "True",
+    false_label: "False",
+    conditions: [{ id: "c1", description: "", left: "", operator: "==", right: "", expression: "", logic: "AND" }],
+  },
+  search_urls: {
+    provider: "duckduckgo",
+    count: 5,
+    url_regex: "",
+    safesearch: "moderate",
+    region: "us-en",
+    timeout: 30,
+  },
+  nlp: { features: [], options: {}, allow_model_download: false },
+  aqi: {
+    country: "india",
+    country_name: "India",
+    state: "",
+    state_name: "",
+    city: "",
+    city_name: "",
+    enable_download: false,
+    formats: [],
+    output_folder: "",
+  },
+  switch: {
+    input: "",
+    cases: [{ id: "c1", value: "", type: "auto", label: "" }],
+    default: { label: "Default" },
+  },
   hitl: {
     feature: "approval",
     approval: { instructions: "" },
@@ -138,4 +193,9 @@ export const extraSidebarNodes = [
   { type: "time_operation",   label: "Time Operation",   icon: "⏱", color: "#f472b6", bg: "rgba(244,114,182,0.08)", border: "rgba(244,114,182,0.3)", desc: "Wait / schedule / hold" },
   { type: "file_reader",      label: "File Reader",      icon: "📄", color: "#22d3ee", bg: "rgba(34,211,238,0.08)",  border: "rgba(34,211,238,0.3)",  desc: "Extract file content" },
   { type: "hitl",             label: "HITL",             icon: "🙋", color: "#fbbf24", bg: "rgba(251,191,36,0.08)",  border: "rgba(251,191,36,0.3)",  desc: "Approval / suggestion / questions" },
+  { type: "if_else",          label: "If-Else",          icon: "⑂",  color: "#60a5fa", bg: "rgba(96,165,250,0.08)",  border: "rgba(96,165,250,0.3)",  desc: "Multi-condition branch" },
+  { type: "switch",           label: "Switch",           icon: "⇶",  color: "#e879f9", bg: "rgba(232,121,249,0.08)", border: "rgba(232,121,249,0.3)", desc: "Multi-case routing" },
+  { type: "aqi",              label: "AQI",              icon: "🌫", color: "#a3e635", bg: "rgba(163,230,53,0.08)",  border: "rgba(163,230,53,0.3)",  desc: "City air quality + download" },
+  { type: "nlp",              label: "NLP",              icon: "🧬", color: "#fb7185", bg: "rgba(251,113,133,0.08)", border: "rgba(251,113,133,0.3)", desc: "19 selectable NLP features" },
+  { type: "search_urls",      label: "Search_URLs",      icon: "🔎", color: "#38bdf8", bg: "rgba(56,189,248,0.08)",  border: "rgba(56,189,248,0.3)",  desc: "DuckDuckGo / Google → URLs" },
 ];

@@ -122,3 +122,80 @@ export const deleteSessions = (botId, sessionIds) =>
 
 export const deleteAllSessions = (botId) =>
   request(`/bots/${encodeURIComponent(botId)}/sessions`, { method: "DELETE" });
+
+export const getBotDocumentation = (botId) =>
+  request(`/bots/${encodeURIComponent(botId)}/documentation`);
+
+const STREAM_IDLE_MS = 90000;
+
+// Live SSE chat. Events are delivered through onEvent. Throws BotError with kind:
+// "unsupported" (endpoint missing), "aborted" (user stopped), "timeout", "connection", "backend", "not_found".
+export async function streamChat(botId, sessionId, message, files = [], { onEvent, signal, retry = false } = {}) {
+  const controller = new AbortController();
+  let timedOut = false;
+  let idle = null;
+  const arm = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => { timedOut = true; controller.abort(); }, STREAM_IDLE_MS);
+  };
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  try {
+    arm();
+    const res = await fetch(
+      `${API_BASE}/bots/${encodeURIComponent(botId)}/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ message, retry, files: files.map((f) => ({ file_id: f.file_id })) }),
+        signal: controller.signal,
+      }
+    );
+
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json())?.detail || ""; } catch { /* ignore */ }
+      if (res.status === 405 || (res.status === 404 && detail === "Not Found")) {
+        throw new BotError("unsupported", "Streaming is not available.");
+      }
+      if (res.status === 404) throw new BotError("not_found", detail || "Not found.");
+      throw new BotError("backend", detail || "The server returned an error. Please try again.");
+    }
+    if (!res.body) throw new BotError("unsupported", "Streaming is not supported by this browser.");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      arm();
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const line = raw.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+        onEvent?.(evt);
+      }
+    }
+  } catch (err) {
+    if (err instanceof BotError) throw err;
+    if (err?.name === "AbortError") {
+      throw timedOut
+        ? new BotError("timeout", "The response stalled and was stopped. Please try again.")
+        : new BotError("aborted", "Generation stopped.");
+    }
+    throw new BotError("connection", "Could not reach the server. Check that the backend is running.");
+  } finally {
+    clearTimeout(idle);
+    if (signal) signal.removeEventListener("abort", onAbort);
+  }
+}

@@ -159,7 +159,9 @@ export default function RunHistoryModal({ flowId, onClose }) {
                   return (
                     <div key={`${n.node_id}-${idx}`} style={{ ...s.nodeCard, background: p.bg, borderColor: p.border }}>
                       <div style={s.nodeHead}>
-                        <span style={s.nodeName}>{n.node_type} · {n.node_id}</span>
+                        <span style={s.nodeName}>
+                          {n.aka ? `${n.aka} (${n.node_type})` : n.node_type} · {n.node_id}
+                        </span>
                         <span style={{ ...s.badge, background: p.badge }}>{p.label}</span>
                         <span style={s.duration}>{fmtDuration(n.duration_ms)}</span>
                       </div>

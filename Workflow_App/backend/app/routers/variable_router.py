@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app import db
-from app.nodes.io_schema import public_node_io
+from app.nodes.io_schema import public_io_for, public_node_io
 from app.variables import VariableError
 
 router = APIRouter(prefix="/variables", tags=["variables"])
@@ -26,12 +26,22 @@ class UpdateVariableRequest(BaseModel):
     flow_id: int | None = None
 
 
+class ResolveIORequest(BaseModel):
+    node_type: str
+    data: dict[str, Any] = {}
+
+
 def _http(exc: VariableError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.message)
 
 @router.get("/node-io")
 async def node_io():
     return public_node_io()
+
+
+@router.post("/node-io/resolve")
+async def node_io_resolve(payload: ResolveIORequest):
+    return public_io_for(payload.node_type, payload.data)
 
 
 @router.get("")

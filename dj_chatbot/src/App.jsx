@@ -6,6 +6,7 @@ import BotSetup from "./components/BotSetup";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import TopBar from "./components/TopBar";
+import DocumentationView from "./components/DocumentationView";
 import { useBot } from "./hooks/useChatStore";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<BotSetup />} />
           <Route path="/bots/:botId" element={<BotPage />} />
+          <Route path="/bots/:botId/documentation" element={<DocumentationView />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
@@ -71,6 +73,7 @@ function BotPage() {
         onNewChat={store.newChat}
         onSelectSession={store.selectSession}
         onSwitchBot={() => navigate("/")}
+        onOpenDocumentation={() => navigate(`/bots/${botId}/documentation`)}
         onRename={store.rename}
         onDeleteSession={store.removeSession}
         onDeleteSessions={store.removeSessions}
@@ -81,7 +84,9 @@ function BotPage() {
         session={store.activeSession}
         messages={store.messages}
         loading={store.loading}
+        streaming={store.streaming}
         onSend={store.send}
+        onStop={store.stop}
         onRespond={store.respond}
       />
     </div>

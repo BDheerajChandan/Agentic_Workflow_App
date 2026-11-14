@@ -10,13 +10,18 @@ def _docs_text(result: dict):
     return "\n\n".join(d.page_content for d in docs)
 
 def _cv_path(*path):
-    """Resolve a nested key path inside result['current_value'] (used by JSON-returning nodes)."""
+    """Resolve a nested key/index path inside result['current_value'] (used by JSON-returning nodes)."""
     def resolve(r):
         cur = r.get("current_value")
         for key in path:
-            if not isinstance(cur, dict):
-                return None
-            cur = cur.get(key)
+            if isinstance(key, int):
+                if not isinstance(cur, (list, tuple)) or key >= len(cur):
+                    return None
+                cur = cur[key]
+            else:
+                if not isinstance(cur, dict):
+                    return None
+                cur = cur.get(key)
         return cur
     return resolve
 
@@ -30,6 +35,31 @@ def _data_path(*path):
             cur = cur.get(key)
         return cur
     return resolve
+
+_NLP_INPUTS = [
+    {"key": "text",      "label": "Input Text",            "state_key": "current_value"},
+    {"key": "documents", "label": "Documents / Text List", "state_key": "nlp_documents", "transient": True},
+    {"key": "context",   "label": "Context",               "state_key": "nlp_context",   "transient": True},
+    {"key": "question",  "label": "Question",              "state_key": "nlp_question",  "transient": True},
+    {"key": "audio",     "label": "Audio File(s)",         "state_key": "nlp_audio",    "transient": True},
+]
+
+
+def _nlp_fixed():
+    return [
+        {"key": "result",     "label": "Full Response (JSON)", "resolve": lambda r: r.get("current_value")},
+        {"key": "input_text", "label": "Input Text",           "resolve": _cv_path("input_text")},
+        {"key": "metadata",   "label": "Execution Metadata",   "resolve": _cv_path("execution_metadata")},
+        {"key": "errors",     "label": "Feature Errors",       "resolve": _cv_path("errors")},
+    ]
+
+
+def _nlp_io(config):
+    from app.nlp.registry import LABELS, selected_features
+    outs = _nlp_fixed()
+    for f in selected_features(config):
+        outs.append({"key": f, "label": LABELS[f], "resolve": _cv_path("results", f)})
+    return {"inputs": _NLP_INPUTS, "outputs": outs}
 
 NODE_IO: dict[str, dict] = {
     "start": {
@@ -121,7 +151,7 @@ NODE_IO: dict[str, dict] = {
             {"key": "display_name", "label": "Display Name",         "resolve": _cv_path("data", "display_name")},
         ],
     },
-        "python_functions": {
+    "python_functions": {
         "inputs": [
             {"key": "inputs", "label": "Inputs", "state_key": "python_inputs", "transient": True},
         ],
@@ -165,6 +195,74 @@ NODE_IO: dict[str, dict] = {
             {"key": "responses",   "label": "Responses",          "resolve": _cv_path("responses")},
         ],
     },
+        "if_else": {
+        "inputs": [
+            {"key": "value", "label": "Input Value", "state_key": "current_value"},
+        ],
+        "outputs": [
+            {"key": "result",  "label": "Pass-through Value",   "resolve": lambda r: r.get("current_value")},
+            {"key": "matched", "label": "Matched (True/False)", "resolve": _data_path("if_else", "matched")},
+            {"key": "branch",  "label": "Branch",               "resolve": _data_path("if_else", "branch")},
+        ],
+    },
+    "switch": {
+        "inputs": [
+            {"key": "value", "label": "Switch Input", "state_key": "current_value"},
+        ],
+        "outputs": [
+            {"key": "result",       "label": "Input Value",  "resolve": lambda r: r.get("current_value")},
+            {"key": "matched",      "label": "Matched",      "resolve": _data_path("switch", "matched")},
+            {"key": "matched_case", "label": "Matched Case", "resolve": _data_path("switch", "matched_case")},
+            {"key": "branch",       "label": "Branch",       "resolve": _data_path("switch", "branch")},
+            {"key": "label",        "label": "Branch Label", "resolve": _data_path("switch", "label")},
+        ],
+    },
+        "aqi": {
+        "inputs": [
+            {"key": "country", "label": "Country",         "state_key": "aqi_country", "transient": True},
+            {"key": "state",   "label": "State",           "state_key": "aqi_state",   "transient": True},
+            {"key": "city",    "label": "City / District", "state_key": "aqi_city",    "transient": True},
+        ],
+        "outputs": [
+            {"key": "result",      "label": "Full Response (JSON)",  "resolve": lambda r: r.get("current_value")},
+            {"key": "aqi",         "label": "AQI",                   "resolve": _cv_path("aqi")},
+            {"key": "category",    "label": "Air Quality Category",  "resolve": _cv_path("category")},
+            {"key": "pm25",        "label": "PM2.5",                 "resolve": _cv_path("pollutants", "pm25", "value")},
+            {"key": "pm10",        "label": "PM10",                  "resolve": _cv_path("pollutants", "pm10", "value")},
+            {"key": "co",          "label": "Carbon Monoxide",       "resolve": _cv_path("pollutants", "co", "value")},
+            {"key": "no2",         "label": "Nitrogen Dioxide",      "resolve": _cv_path("pollutants", "no2", "value")},
+            {"key": "so2",         "label": "Sulfur Dioxide",        "resolve": _cv_path("pollutants", "so2", "value")},
+            {"key": "o3",          "label": "Ozone",                 "resolve": _cv_path("pollutants", "o3", "value")},
+            {"key": "temperature", "label": "Temperature °C",        "resolve": _cv_path("weather", "temperature_c")},
+            {"key": "humidity",    "label": "Humidity %",            "resolve": _cv_path("weather", "humidity_pct")},
+            {"key": "wind_speed",  "label": "Wind Speed",            "resolve": _cv_path("weather", "wind_speed")},
+            {"key": "url",         "label": "Source URL",            "resolve": _cv_path("url")},
+            {"key": "files",       "label": "Downloaded Files",      "resolve": _cv_path("download", "files")},
+        ],
+    },
+    "nlp": {
+        "dynamic": _nlp_io,
+        "inputs": _NLP_INPUTS,
+        "outputs": _nlp_fixed(),
+    },
+        "search_urls": {
+        "inputs": [
+            {"key": "query", "label": "Search Query",     "state_key": "search_query", "transient": True},
+            {"key": "regex", "label": "URL Regex Filter", "state_key": "search_regex", "transient": True},
+        ],
+        "outputs": [
+            {"key": "result",         "label": "Full Response (JSON)", "resolve": lambda r: r.get("current_value")},
+            {"key": "results",        "label": "Results (array)",      "resolve": _cv_path("results")},
+            {"key": "urls",           "label": "URLs (array)",         "resolve": _cv_path("urls")},
+            {"key": "first_url",      "label": "First URL",            "resolve": _cv_path("urls", 0)},
+            {"key": "query",          "label": "Query",                "resolve": _cv_path("query")},
+            {"key": "provider",       "label": "Provider",             "resolve": _cv_path("provider")},
+            {"key": "requested_count", "label": "Requested Count",     "resolve": _cv_path("requested_count")},
+            {"key": "returned_count", "label": "Returned Count",       "resolve": _cv_path("returned_count")},
+            {"key": "status",         "label": "Status",               "resolve": _cv_path("status")},
+            {"key": "message",        "label": "Message",              "resolve": _cv_path("message")},
+        ],
+    },
 }
 
 _DEFAULT_IO: dict = {
@@ -177,16 +275,23 @@ _DEFAULT_IO: dict = {
 }
 
 
-def get_node_io(node_type: str | None) -> dict:
-    return NODE_IO.get(node_type or "", _DEFAULT_IO)
+def get_node_io(node_type: str | None, config: dict | None = None) -> dict:
+    io = NODE_IO.get(node_type or "", _DEFAULT_IO)
+    dynamic = io.get("dynamic")
+    if dynamic is not None:
+        try:
+            return dynamic(config or {})
+        except Exception:
+            return io
+    return io
 
 
-def find_input(node_type: str | None, key: str) -> dict | None:
-    return next((i for i in get_node_io(node_type)["inputs"] if i["key"] == key), None)
+def find_input(node_type: str | None, key: str, config: dict | None = None) -> dict | None:
+    return next((i for i in get_node_io(node_type, config)["inputs"] if i["key"] == key), None)
 
 
-def find_output(node_type: str | None, key: str) -> dict | None:
-    return next((o for o in get_node_io(node_type)["outputs"] if o["key"] == key), None)
+def find_output(node_type: str | None, key: str, config: dict | None = None) -> dict | None:
+    return next((o for o in get_node_io(node_type, config)["outputs"] if o["key"] == key), None)
 
 
 def _public(io: dict) -> dict:
@@ -200,7 +305,12 @@ def public_node_io() -> dict:
     return {
         "nodes":   {t: _public(io) for t, io in NODE_IO.items()},
         "default": _public(_DEFAULT_IO),
+        "dynamic": [t for t, io in NODE_IO.items() if io.get("dynamic")],
     }
+
+
+def public_io_for(node_type: str | None, config: dict | None = None) -> dict:
+    return _public(get_node_io(node_type, config))
 
 
 

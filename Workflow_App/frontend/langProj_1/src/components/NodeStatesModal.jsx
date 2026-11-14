@@ -30,6 +30,7 @@ export default function NodeStatesModal({ traces, nodes, error, onClose }) {
     .map((n) => ({
       node_id: n.id,
       node_type: n.type,
+      aka: n.data?.aka || null,
       status: "not_executed",
       input: null,
       output: null,
@@ -77,7 +78,9 @@ export default function NodeStatesModal({ traces, nodes, error, onClose }) {
               <div key={key} style={{ ...s.card, background: p.bg, borderColor: p.border }}>
                 <div style={s.cardHeader}>
                   <div>
-                    <span style={s.nodeName}>{item.node_type} · {item.node_id}</span>
+                    <span style={s.nodeName}>
+                      {item.aka ? `${item.aka} (${item.node_type})` : item.node_type} · {item.node_id}
+                    </span>
                     <span style={{ ...s.badge, background: p.badge }}>{p.label}</span>
                     {item.duration_ms != null && (
                       <span style={s.duration}>{item.duration_ms} ms</span>

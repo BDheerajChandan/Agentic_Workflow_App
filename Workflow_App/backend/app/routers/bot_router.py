@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app import db
@@ -19,6 +21,7 @@ from app.hitl_service import submit_interaction
 from app.pause import PauseRequested
 from app.files.text import is_file_result
 from app.resume import paused_result, store_pause
+from app.streaming import GenerationCancelled, KEEPALIVE, sse, terminal_generate_ids
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -49,6 +52,9 @@ class SaveMessagesRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str = ""
     files: list[dict[str, Any]] | None = None
+
+class StreamChatRequest(ChatRequest):
+    retry: bool = False
 
 
 class InteractionSubmitRequest(BaseModel):
@@ -346,6 +352,154 @@ async def chat(bot_id: str, session_id: str, payload: ChatRequest):
         "interaction": None,
         "messages": saved,
     }
+
+async def _is_last_user_message(bot_id: str, session_id: str, content: str) -> bool:
+    msgs = await db.get_messages(bot_id, session_id)
+    return bool(msgs) and msgs[-1]["role"] == "user" and msgs[-1]["content"] == content
+
+
+@router.post("/{bot_id}/sessions/{session_id}/chat/stream")
+async def chat_stream(bot_id: str, session_id: str, payload: StreamChatRequest):
+    message = payload.message.strip()
+    if not message and not payload.files:
+        raise HTTPException(status_code=400, detail="Message is required.")
+
+    bot = await _require_bot(bot_id)
+    session = await db.get_session(bot_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    flow = await db.get_flow(bot["flow_id"])
+    if not flow:
+        raise HTTPException(status_code=404, detail="Tagged workflow not found.")
+    try:
+        files = await file_repository.resolve_public(payload.files) if payload.files else []
+    except FileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    variable_defs = await db.list_variables()
+    user_msg = {
+        "role": "user",
+        "content": message or ", ".join(f["file_name"] for f in files),
+        "meta": {"files": _file_meta(files)} if files else None,
+    }
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    cancel = threading.Event()
+    stream_ids: set = set()
+
+    def put(kind, data=None):
+        loop.call_soon_threadsafe(queue.put_nowait, (kind, data))
+
+    def on_token(node_id, delta):
+        if cancel.is_set():
+            raise GenerationCancelled()
+        if node_id in stream_ids:
+            put("token", delta)
+
+    def _run():
+        try:
+            nodes = [Node.model_validate(n) for n in flow["nodes"]]
+            edges = [Edge.model_validate(e) for e in flow["edges"]]
+            if display_mode(nodes) == "entire":
+                stream_ids.update(terminal_generate_ids(nodes, edges))
+            traces: list = []
+
+            def _cb(node_id, status, detail=None):
+                if status == "trace" and detail:
+                    traces.append(detail)
+
+            graph = build_graph(
+                nodes, edges, event_callback=_cb,
+                variable_defs=variable_defs, flow_id=bot["flow_id"],
+                token_callback=on_token,
+            )
+            result = graph.invoke({"input": message, "data": {}, "files": files})
+            put("result", (result, nodes, traces))
+        except GenerationCancelled:
+            put("cancelled")
+        except PauseRequested as exc:
+            put("paused", exc)
+        except Exception as exc:  # noqa: BLE001
+            put("error", str(exc))
+
+    async def events():
+        try:
+            # The user message is persisted first so an interrupted run never loses it.
+            if payload.retry and await _is_last_user_message(bot_id, session_id, user_msg["content"]):
+                pass
+            else:
+                saved_user = await asyncio.shield(db.add_messages(bot_id, session_id, [user_msg]))
+                yield sse("user_saved", message=saved_user[0])
+
+            loop.run_in_executor(None, _run)
+
+            while True:
+                try:
+                    kind, data = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield KEEPALIVE
+                    continue
+
+                if kind == "token":
+                    yield sse("token", delta=data)
+
+                elif kind == "result":
+                    result, run_nodes, traces = data
+                    try:
+                        serial = _serialise(result)
+                        if display_mode(run_nodes) == "entire":
+                            reply = _extract_reply(serial)
+                        else:
+                            reply = render_reply(
+                                resolve_output_display(run_nodes, serial, traces, variable_defs)
+                            )
+                        if not reply:
+                            raise RuntimeError("The workflow returned an empty response.")
+                    except Exception as exc:  # noqa: BLE001
+                        yield sse("error", detail=str(exc))
+                        return
+                    saved = await asyncio.shield(
+                        db.add_messages(bot_id, session_id, [{"role": "bot", "content": reply}])
+                    )
+                    try:
+                        await db.record_execution(bot["flow_id"], message, serial)
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"⚠️  Failed to persist execution: {exc}")
+                    yield sse("done", message=saved[0], reply=reply)
+                    return
+
+                elif kind == "paused":
+                    pause_id = await store_pause(
+                        data, bot["flow_id"], flow["nodes"], flow["edges"], message
+                    )
+                    paused = paused_result(data, pause_id)
+                    interaction = paused.get("interaction")
+                    bot_msg = (
+                        _interaction_message(interaction, bot_id, session_id)
+                        if interaction
+                        else {"role": "bot", "content": paused["message"]}
+                    )
+                    saved = await asyncio.shield(db.add_messages(bot_id, session_id, [bot_msg]))
+                    yield sse("interaction", message=saved[0])
+                    return
+
+                elif kind == "error":
+                    yield sse("error", detail=data)
+                    return
+
+                elif kind == "cancelled":
+                    return
+        except Exception as exc:  # noqa: BLE001
+            yield sse("error", detail=str(exc))
+        finally:
+            cancel.set()  # client left / stream finished: stop consuming the model stream
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/{bot_id}/sessions/{session_id}/interactions/{pause_id}/submit")

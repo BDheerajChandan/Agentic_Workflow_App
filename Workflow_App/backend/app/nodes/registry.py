@@ -16,6 +16,11 @@ from app.nodes.python_functions import python_functions_node
 from app.nodes.time_operation import time_operation_node
 from app.nodes.HILT_Node import hitl_node
 from app.nodes.file_reader import file_reader_node
+from app.nodes.if_else import if_else_node
+from app.nodes.switch import switch_node
+from app.nodes.aqi import aqi_node
+from app.nodes.nlp import nlp_node
+from app.nodes.search_urls import search_urls_node
 
 NODE_REGISTRY = {
     "start": start_node,
@@ -34,4 +39,9 @@ NODE_REGISTRY = {
     "time_operation": time_operation_node,
     "hitl": hitl_node,
     "file_reader": file_reader_node,
+    "if_else": if_else_node,
+    "switch": switch_node,
+    "aqi": aqi_node,
+    "nlp": nlp_node,
+    "search_urls": search_urls_node,
 }

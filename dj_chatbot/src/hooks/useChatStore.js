@@ -1,5 +1,5 @@
 // src/hooks/useChatStore.js
-// Backend-driven state for one Bot. No local persistence.
+// Backend-driven state for one Bot. Live-streams replies; falls back to the blocking endpoint.
 
 import { useEffect, useRef, useState } from "react";
 import * as api from "../services/botApi";
@@ -11,9 +11,11 @@ export function useBot(botId, sessionParam, onSessionChange) {
   const [status, setStatus] = useState("loading"); // loading | ready | notfound | error
   const [error, setError] = useState("");
   const [pending, setPending] = useState(() => new Set());
+  const [streamSid, setStreamSid] = useState(null);
 
   const activeRef = useRef(sessionParam);
   activeRef.current = sessionParam;
+  const abortRef = useRef(null);
 
   // ── Load bot + sessions ───────────────────────────────────────────────────
   useEffect(() => {
@@ -101,41 +103,135 @@ export function useBot(botId, sessionParam, onSessionChange) {
     setBot(updated);
   };
 
-  const send = async (text, files = []) => {
+  const stop = () => abortRef.current?.abort();
+
+  const send = async (text, files = [], opts = {}) => {
     const sid = sessionParam;
     if (!sid || pending.has(sid)) return;
 
+    const stamp = Date.now();
+    const iso = () => new Date().toISOString();
+    const tmpId = `tmp-${stamp}`;
+    const phId = `stream-${stamp}`;
     const tmp = {
-      id: `tmp-${Date.now()}`,
+      id: tmpId,
       role: "user",
       content: text || files.map((f) => f.file_name).join(", "),
       meta: files.length
         ? { files: files.map((f) => ({ file_id: f.file_id, file_name: f.file_name, size_bytes: f.size_bytes })) }
         : null,
-      created_at: new Date().toISOString(),
+      created_at: iso(),
     };
-    setMessages((m) => [...m, tmp]);
+    const placeholder = { id: phId, role: "bot", content: "", streaming: true, created_at: iso() };
+
+    setMessages((m) => [
+      ...(opts.retry ? m.filter((x) => !x.retryable) : m),
+      ...(opts.retry ? [] : [tmp]),
+      placeholder,
+    ]);
     setPending((p) => new Set(p).add(sid));
+    setStreamSid(sid);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let buffer = "";
+    let raf = null;
+    let finished = false;
+    let sawEvent = false;
+
+    const patch = (fn) => {
+      if (activeRef.current === sid) setMessages(fn);
+    };
+    const flush = () => {
+      raf = null;
+      if (!buffer) return;
+      const chunk = buffer;
+      buffer = "";
+      patch((m) => m.map((x) => (x.id === phId ? { ...x, content: x.content + chunk } : x)));
+    };
+    const drain = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = null;
+      flush();
+    };
+    const settle = (msg) =>
+      patch((m) =>
+        m.some((x) => x.id === phId)
+          ? m.map((x) => (x.id === phId ? msg : x))
+          : m.some((x) => x.id === msg.id)
+          ? m
+          : [...m, msg]
+      );
+    const fail = (detail) => {
+      finished = true;
+      settle({
+        id: `err-${Date.now()}`,
+        role: "bot",
+        error: true,
+        content: detail || "Something went wrong. Please try again.",
+        retryable: true,
+        retry: { text, files },
+        created_at: iso(),
+      });
+    };
+
+    const onEvent = (evt) => {
+      sawEvent = true;
+      if (evt.type === "user_saved") {
+        patch((m) => {
+          if (m.some((x) => x.id === tmpId)) return m.map((x) => (x.id === tmpId ? evt.message : x));
+          const i = m.findIndex((x) => x.id === phId);
+          const copy = [...m];
+          copy.splice(i < 0 ? copy.length : i, 0, evt.message);
+          return copy;
+        });
+      } else if (evt.type === "token") {
+        buffer += evt.delta || "";
+        if (!raf) raf = requestAnimationFrame(flush);
+      } else if (evt.type === "done" || evt.type === "interaction") {
+        drain();
+        finished = true;
+        settle(evt.message);
+      } else if (evt.type === "error") {
+        drain();
+        fail(evt.detail);
+      }
+    };
 
     try {
-      const res = await api.sendChat(botId, sid, text, files);
-      if (activeRef.current === sid) {
-        setMessages((m) => [...m.filter((x) => x.id !== tmp.id), ...res.messages]);
+      await api.streamChat(botId, sid, text, files, {
+        onEvent,
+        signal: controller.signal,
+        retry: !!opts.retry,
+      });
+      if (!finished) {
+        drain();
+        fail("The response ended unexpectedly.");
       }
     } catch (err) {
-      if (activeRef.current === sid) {
-        setMessages((m) => [
-          ...m,
-          {
-            id: `err-${Date.now()}`,
-            role: "bot",
-            error: true,
-            content: err?.userMessage || "Something went wrong. Please try again.",
-            created_at: new Date().toISOString(),
-          },
-        ]);
+      drain();
+      if (err?.kind === "aborted") {
+        patch((m) =>
+          m.flatMap((x) => {
+            if (x.id !== phId) return [x];
+            return x.content ? [{ ...x, streaming: false, stopped: true }] : [];
+          })
+        );
+      } else if (err?.kind === "unsupported" && !sawEvent) {
+        try {
+          const res = await api.sendChat(botId, sid, text, files);
+          patch((m) => [...m.filter((x) => x.id !== tmpId && x.id !== phId), ...res.messages]);
+        } catch (e2) {
+          fail(e2?.userMessage);
+        }
+      } else if (!finished) {
+        fail(err?.userMessage);
       }
     } finally {
+      drain();
+      abortRef.current = null;
+      setStreamSid(null);
       setPending((p) => {
         const next = new Set(p);
         next.delete(sid);
@@ -172,7 +268,7 @@ export function useBot(botId, sessionParam, onSessionChange) {
     }
   };
 
-    const afterDelete = async (deletedIds) => {
+  const afterDelete = async (deletedIds) => {
     const { sessions: list } = await api.listSessions(botId);
     setSessions(list);
     if (deletedIds === "all" || deletedIds.includes(sessionParam)) {
@@ -212,10 +308,12 @@ export function useBot(botId, sessionParam, onSessionChange) {
     error,
     activeSession,
     loading: sessionParam ? pending.has(sessionParam) : false,
+    streaming: !!sessionParam && streamSid === sessionParam,
     newChat,
     selectSession,
     rename,
     send,
+    stop,
     respond,
     removeSession,
     removeSessions,

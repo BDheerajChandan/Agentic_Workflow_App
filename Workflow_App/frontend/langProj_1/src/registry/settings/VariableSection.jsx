@@ -6,7 +6,7 @@
 // UI rows carry a stable `rid` (UI-only, never persisted) so deleting one row never disturbs another.
 
 import React, { useEffect, useRef, useState } from "react";
-import { getNodeIO, listVariables } from "../../services/api";
+import { getNodeIO, listVariables, resolveNodeIO } from "../../services/api";
 import { Field, SelectField } from "./fields";
 import {
   lbl, variableBox, checkRow, sectionNote, infoBox, mappingBox,
@@ -17,6 +17,11 @@ const SOURCE_OPTIONS = [
   { value: "node_output", label: "Node Output" },
   { value: "static",      label: "Static Value" },
 ];
+
+const withCurrent = (opts, key) =>
+  key && !opts.some((o) => o.value === key)
+    ? [...opts, { value: key, label: `⚠ Unavailable (${key})` }]
+    : opts;
 
 let ridSeq = 0;
 const newRid = () => `row_${Date.now().toString(36)}_${(ridSeq++).toString(36)}`;
@@ -151,11 +156,14 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
   const [variables, setVariables] = useState([]);
   const [loaded,    setLoaded]    = useState(false);
   const [error,     setError]     = useState("");
+  const [dynIO,     setDynIO]     = useState(null);
   const [inRows,    setInRows]    = useState([]);
   const [outRows,   setOutRows]   = useState([]);
   const hydrated = useRef(false);
 
-  const io  = nodeIO ? (nodeIO.nodes[nodeType] || nodeIO.default) : null;
+  const isDynamic = !!nodeIO?.dynamic?.includes(nodeType);
+  const dynKey = isDynamic ? JSON.stringify(localData.features || []) : "";
+  const io = nodeIO ? (isDynamic && dynIO) || nodeIO.nodes[nodeType] || nodeIO.default : null;
   const cfg = normalize(localData.variable || {}, io);
   const enabled = cfg.enabled;
   const im = cfg.input_mapping;
@@ -168,6 +176,15 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
       .catch(() => { if (!cancelled) setError("Failed to load node inputs/outputs."); });
     return () => { cancelled = true; };
   }, []);
+
+    useEffect(() => {
+    if (!isDynamic) { setDynIO(null); return undefined; }
+    let cancelled = false;
+    resolveNodeIO(nodeType, localData)
+      .then((d) => { if (!cancelled) setDynIO(d); })
+      .catch(() => { if (!cancelled) setError("Failed to load node outputs."); });
+    return () => { cancelled = true; };
+  }, [isDynamic, nodeType, dynKey]); // eslint-disable-line
 
   // One-time hydration of UI rows from the saved configuration (rows then live in local state).
   useEffect(() => {
@@ -341,7 +358,7 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                         label="Target Input"
                         value={r.target}
                         onChange={(val) => updIn(r.rid, { target: val })}
-                        options={targetOpts}
+                        options={withCurrent(targetOpts, r.target)}
                       />
                       <div style={sectionNote}>
                         Mapping: {varId ? varName(varId) : "Variable"}
@@ -426,7 +443,7 @@ export default function VariableSection({ localData, nodeType, patch, flowId, va
                           label="Source Output"
                           value={r.output || ""}
                           onChange={(val) => updOut(r.rid, { output: val })}
-                          options={outputOptions}
+                          options={withCurrent(outputOptions, r.output)}
                         />
                       )}
                       {r.source === "node_output" && (

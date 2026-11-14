@@ -6,10 +6,20 @@ import time
 from langgraph.graph import StateGraph, END
 
 from app.graph.state import GraphState
-from app.nodes.io_schema import find_input, find_output, primary_value
+from app.nodes.io_schema import find_input, find_output, get_node_io, primary_value
 from app.nodes.registry import NODE_REGISTRY
 from app.pause import PauseRequested
 from app.variables import VariableError, VariableRuntime, parse_variable_config, resolve_path
+
+BRANCH_TYPES = {"if_else", "switch"}
+
+
+def _router(node_id, routes):
+    def route(state):
+        branch = ((state.get("data") or {}).get("__route") or {}).get(node_id)
+        targets = routes.get(branch) if branch else None
+        return list(dict.fromkeys(targets)) if targets else END
+    return route
 
 
 def _safe(obj):
@@ -35,6 +45,7 @@ def build_graph(
     entry_node_id=None,
     initial_variables=None,
     node_overrides=None,
+    token_callback=None,
 ):
 
     if not nodes:
@@ -80,7 +91,7 @@ def build_graph(
                     if var_cfg and var_cfg["input"]:
                         updates = {}
                         for im in var_cfg["input"]:
-                            target = find_input(node_type, im["target"])
+                            target = find_input(node_type, im["target"], config)
                             if not target:
                                 raise VariableError(
                                     f"Input '{im['target']}' does not exist on node type '{node_type}'."
@@ -99,6 +110,8 @@ def build_graph(
                             **overrides.get(node_id, {}),
                             "__flow_id": flow_id,
                             "__node_id": node_id,
+                            "__variables": runtime.snapshot(),
+                            "__stream": token_callback,
                         },
                     )
 
@@ -106,13 +119,40 @@ def build_graph(
                     if strip:
                         result = {k: v for k, v in result.items() if k not in strip}
 
+                    # ── Record node output for {{Node.field}} resolution ──
+                    if isinstance(result, dict):
+                        _cfg = config or {}
+                        _prev = state.get("data") or {}
+                        _data = dict(result.get("data") or {})
+                        for _k in ("__nodes", "__types", "__names", "__outs", "__route"):
+                            if _k not in _data and _k in _prev:
+                                _data[_k] = _prev[_k]
+                        _val = primary_value(node_type, result)
+                        _outs = {}
+                        for _o in get_node_io(node_type, config)["outputs"]:
+                            try:
+                                _outs[_o["key"]] = _o["resolve"](result)
+                            except Exception:
+                                _outs[_o["key"]] = None
+                        for _k, _key in (
+                            ("__nodes", node_id),
+                            ("__types", node_type),
+                            ("__names", _cfg.get("aka")),
+                        ):
+                            if _key:
+                                _data[_k] = {**(_data.get(_k) or {}), _key: _val}
+                        for _key in (node_id, node_type, _cfg.get("aka")):
+                            if _key:
+                                _data["__outs"] = {**(_data.get("__outs") or {}), _key: _outs}
+                        result = {**result, "data": _data}
+
                     # ── Output Value Mapping: Node Output / Static → Variable (configured order) ──
                     if var_cfg and var_cfg["output"]:
                         for om in var_cfg["output"]:
                             if om["source"] == "static":
                                 value = om["static_value"]
                             else:
-                                source = find_output(node_type, om["output"])
+                                source = find_output(node_type, om["output"], config)
                                 if not source:
                                     raise VariableError(
                                         f"Output '{om['output']}' does not exist on node type '{node_type}'."
@@ -141,6 +181,7 @@ def build_graph(
                         event_callback(node_id, "trace", {
                             "node_id": node_id,
                             "node_type": node_type,
+                            "aka": (config or {}).get("aka") or None,
                             "status": "paused" if paused else ("failed" if error else "passed"),
                             "input": _safe(run_state),
                             "output": _safe(result),
@@ -184,8 +225,20 @@ def build_graph(
 
     graph.set_entry_point(entry)
 
+    branch_ids = {n.id for n in nodes if n.type in BRANCH_TYPES}
+    if_else_ids = {n.id for n in nodes if n.type == "if_else"}
+    branch_routes: dict = {}
     for edge in edges:
-        graph.add_edge(edge.source, edge.target)
+        if edge.source in branch_ids:
+            handle = getattr(edge, "sourceHandle", None) or "default"
+            if edge.source in if_else_ids and handle not in ("true", "false"):
+                continue  # legacy If-Else Default edge: never traversed, never converted
+            branch_routes.setdefault(edge.source, {}).setdefault(handle, []).append(edge.target)
+        else:
+            graph.add_edge(edge.source, edge.target)
+
+    for nid, routes in branch_routes.items():
+        graph.add_conditional_edges(nid, _router(nid, routes))
 
     output_found = False
     for node in nodes:
@@ -195,6 +248,7 @@ def build_graph(
 
     if not output_found:
         last_node = nodes[-1]
-        graph.add_edge(last_node.id, END)
+        if last_node.id not in branch_ids:
+            graph.add_edge(last_node.id, END)
 
     return graph.compile()

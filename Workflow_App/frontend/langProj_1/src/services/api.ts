@@ -465,3 +465,131 @@ export const duplicateFlow = async (
   });
   return res.data as { flow_id: number; route_slug: string; name: string; group_id: string | null };
 };
+
+// ─── AQI locations ────────────────────────────────────────────────────────────
+
+export interface AqiLocationItem {
+  slug: string;
+  name: string;
+}
+
+export interface AqiLocationList {
+  items: AqiLocationItem[];
+  source: "seed" | "cache" | "live";
+  stale: boolean;
+  warning?: string;
+}
+
+export const listAqiCountries = async () => {
+  const res = await axios.get(`${BASE_URL}/aqi/countries`);
+  return res.data as { countries: AqiLocationItem[] };
+};
+
+export const listAqiStates = async (country: string, refresh = false) => {
+  const res = await axios.get(
+    `${BASE_URL}/aqi/countries/${encodeURIComponent(country)}/states`,
+    { params: refresh ? { refresh: true } : {} }
+  );
+  return res.data as AqiLocationList;
+};
+
+export const listAqiCities = async (country: string, state: string, refresh = false) => {
+  const res = await axios.get(
+    `${BASE_URL}/aqi/countries/${encodeURIComponent(country)}/states/${encodeURIComponent(state)}/cities`,
+    { params: refresh ? { refresh: true } : {} }
+  );
+  return res.data as AqiLocationList;
+};
+
+// ─── NLP ──────────────────────────────────────────────────────────────────────
+
+export interface NlpFeature {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export const getNlpFeatures = async () => {
+  const res = await axios.get(`${BASE_URL}/nlp/features`);
+  return res.data as { features: NlpFeature[] };
+};
+
+export const listNlpVoices = async () => {
+  const res = await axios.get(`${BASE_URL}/nlp/voices`);
+  return res.data as { voices: { id: string; name: string; languages: string[] }[] };
+};
+
+export const resolveNodeIO = async (node_type: string, data: Record<string, any>) => {
+  const res = await axios.post(`${BASE_URL}/variables/node-io/resolve`, { node_type, data });
+  return res.data as NodeIODef;
+};
+
+// ─── Search_URLs ──────────────────────────────────────────────────────────────
+
+export interface SearchProviderInfo {
+  value: "duckduckgo" | "google" | "both";
+  label: string;
+  available: boolean;
+  install: string;
+}
+
+export const getSearchProviders = async () => {
+  const res = await axios.get(`${BASE_URL}/search/providers`);
+  return res.data as { providers: SearchProviderInfo[] };
+};
+
+export const validateSearchRegex = async (pattern: string) => {
+  const res = await axios.post(`${BASE_URL}/search/validate-regex`, { pattern });
+  return res.data as { valid: boolean; empty: boolean; error: string | null };
+};
+
+// ─── Workflow documentation ───────────────────────────────────────────────────
+
+export interface DocTestCase {
+  id: string;
+  name: string;
+  description: string;
+  input_data: string;
+  expected_output: string;
+  actual_output: string;
+  status: "not_run" | "passed" | "failed";
+  notes: string;
+}
+
+export interface DocumentationPayload {
+  flow: { id: number; name: string; route_slug: string | null; group_id: string | null };
+  exists: boolean;
+  documentation: {
+    content: Record<string, string>;
+    test_cases: DocTestCase[];
+    version: number;
+    created_at: string | null;
+    updated_at: string | null;
+  };
+}
+
+export const getFlowDocumentation = async (flowId: number) => {
+  const res = await axios.get(`${BASE_URL}/flows/${flowId}/documentation`);
+  return res.data as DocumentationPayload;
+};
+
+export const createFlowDocumentation = async (
+  flowId: number,
+  body: { content: Record<string, string>; test_cases: DocTestCase[] }
+) => {
+  const res = await axios.post(`${BASE_URL}/flows/${flowId}/documentation`, body);
+  return res.data as DocumentationPayload;
+};
+
+export const updateFlowDocumentation = async (
+  flowId: number,
+  body: { content: Record<string, string>; test_cases: DocTestCase[]; base_version: number }
+) => {
+  const res = await axios.put(`${BASE_URL}/flows/${flowId}/documentation`, body);
+  return res.data as DocumentationPayload;
+};
+
+export const deleteFlowDocumentation = async (flowId: number) => {
+  const res = await axios.delete(`${BASE_URL}/flows/${flowId}/documentation`);
+  return res.data as { message: string };
+};

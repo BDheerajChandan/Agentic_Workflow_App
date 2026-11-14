@@ -88,3 +88,11 @@ from app.database.hitl_repository import (  # noqa: F401
     list_pauses,
     list_pending_hitl,
 )
+
+from app.database.documentation_repository import (  # noqa: F401
+    create_documentation,
+    delete_documentation,
+    get_documentation,
+    get_flow_brief,
+    update_documentation,
+)

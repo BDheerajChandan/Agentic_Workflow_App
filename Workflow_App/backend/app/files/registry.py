@@ -29,6 +29,7 @@ FORMATS = {
     ".json": "json", ".jsonl": "jsonl",
     ".html": "html", ".htm": "html", ".xml": "xml",
 }
+FORMATS.update({".wav": "audio", ".aiff": "audio", ".aif": "audio", ".flac": "audio"})
 for _ext in (
     ".txt", ".md", ".py", ".js", ".ts", ".java", ".c", ".cpp", ".sql",
     ".yaml", ".yml", ".ini", ".cfg", ".toml", ".log",
@@ -58,6 +59,12 @@ def detect_kind(file_name: str, head: bytes) -> str:
         ok = head.startswith(_OLE)
     elif kind == "rtf":
         ok = head.lstrip().startswith(b"{\\rtf")
+    elif kind == "audio":
+        ok = (
+            (head[:4] == b"RIFF" and head[8:12] == b"WAVE")
+            or (head[:4] == b"FORM" and head[8:12] in (b"AIFF", b"AIFC"))
+            or head[:4] == b"fLaC"
+        )
     else:
         ok = b"\x00" not in head and not head.startswith((_ZIP, _OLE, b"%PDF"))
         if head.startswith((b"\xff\xfe", b"\xfe\xff")):
