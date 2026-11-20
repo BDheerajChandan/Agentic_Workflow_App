@@ -19,6 +19,23 @@ const OPERATORS = [
   { value: "custom", label: "Custom Expression" },
 ];
 
+const SOURCES = [
+  { value: "static",   label: "Static value" },
+  { value: "variable", label: "State variable" },
+  { value: "node",     label: "Node value" },
+];
+
+const TYPES = [
+  { value: "auto",  label: "auto (detect)" },
+  { value: "str",   label: "str" },
+  { value: "int",   label: "int" },
+  { value: "float", label: "float" },
+  { value: "bool",  label: "bool" },
+  { value: "list",  label: "list" },
+  { value: "dict",  label: "dict" },
+  { value: "null",  label: "null" },
+];
+
 const LOGIC = [
   { value: "AND", label: "AND" },
   { value: "OR",  label: "OR" },
@@ -26,9 +43,49 @@ const LOGIC = [
 
 let seq = 0;
 const newId = () => `c${Date.now().toString(36)}${(seq++).toString(36)}`;
-const blank = () => ({ id: newId(), description: "", left: "", operator: "==", right: "", expression: "", logic: "AND" });
+const blank = () => ({ id: newId(), description: "", left: "", operator: "==", right: "", expression: "", expression_type: "auto", logic: "AND" });
 
 const isCustom = (c) => c.operator === "custom";
+
+// One operand = source (static / state variable / node value) + type + value.
+// The value stays a plain string ("18" or "{{name}}") so the backend format is unchanged.
+function Operand({ side, label, c, upd, common, placeholder }) {
+  const source = c[`${side}_source`] || "static";
+  const type = c[`${side}_type`] || "auto";
+  return (
+    <>
+      <SelectField
+        label={`${label} Source`}
+        value={source}
+        onChange={(val) => upd(c.id, { [`${side}_source`]: val, [side]: "" })}
+        options={SOURCES}
+      />
+      <SelectField
+        label={`${label} Type`}
+        value={type}
+        onChange={(val) => upd(c.id, { [`${side}_type`]: val })}
+        options={TYPES}
+      />
+      {source === "static" ? (
+        <Field
+          label={label}
+          value={c[side]}
+          onChange={(val) => upd(c.id, { [side]: val })}
+          placeholder={placeholder}
+        />
+      ) : (
+        <VariableInput
+          {...common}
+          label={label}
+          only={source === "variable" ? "variables" : "nodes"}
+          value={c[side]}
+          onChange={(val) => upd(c.id, { [side]: val })}
+          placeholder={source === "variable" ? "{{my_variable}}" : "{{node_1.output}}"}
+        />
+      )}
+    </>
+  );
+}
 
 export default function IfElseSettings({ localData, patch, selectedNodeId, flowId, variablesVersion }) {
   const conds = Array.isArray(localData.conditions) && localData.conditions.length
@@ -93,13 +150,7 @@ export default function IfElseSettings({ localData, patch, selectedNodeId, flowI
           />
 
           {!isCustom(c) && (
-            <VariableInput
-              {...common}
-              label="Left Operand"
-              value={c.left}
-              onChange={(val) => upd(c.id, { left: val })}
-              placeholder="{{Start.age}}"
-            />
+            <Operand side="left" label="Left Operand" c={c} upd={upd} common={common} placeholder="18" />
           )}
 
           <SelectField
@@ -110,23 +161,37 @@ export default function IfElseSettings({ localData, patch, selectedNodeId, flowI
           />
 
           {isCustom(c) ? (
-            <VariableInput
-              {...common}
-              label="Expression"
-              mode="append"
-              multiline
-              rows={3}
-              value={c.expression}
-              onChange={(val) => upd(c.id, { expression: val })}
-              placeholder={'{{Start.age}} >= 18 AND {{Start.country}} == "India"'}
-            />
+            <>
+              <SelectField
+                label="Expression Type (applies to every {{ }})"
+                value={c.expression_type || "auto"}
+                onChange={(val) => upd(c.id, { expression_type: val })}
+                options={TYPES}
+              />
+              <VariableInput
+                {...common}
+                label="Expression"
+                mode="append"
+                multiline
+                rows={3}
+                value={c.expression}
+                onChange={(val) => upd(c.id, { expression: val })}
+                placeholder={"{{Start.a}} % {{Start.b}} == 0"}
+              />
+              <div style={sectionNote}>
+                Mix state variables, node values and literals: {"{{Start.a}} % {{Start.b}} == 0"}.
+                Operators: + - * / // % &lt; &gt; &lt;= &gt;= == != and or not in.
+                Override one reference with {"{{ref:int}}"} (auto, str, int, float, bool, list, dict, null).
+              </div>
+            </>
           ) : (
-            <VariableInput
-              {...common}
+            <Operand
+              side="right"
               label="Right Operand"
-              value={c.right}
-              onChange={(val) => upd(c.id, { right: val })}
-              placeholder={'18, "India", true, null or {{Generate.score}}'}
+              c={c}
+              upd={upd}
+              common={common}
+              placeholder={'18, "India", true or null'}
             />
           )}
 

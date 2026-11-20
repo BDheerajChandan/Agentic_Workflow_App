@@ -37,7 +37,21 @@ def parse_timeout(value, default=30):
         raise SearchConfigError("Timeout must be between 1 and 60 seconds.")
     return n
 
-def search(query, provider, count, regex=None, region="us-en", safesearch="moderate", timeout=30):
+def parse_retries(value, default=2):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    if isinstance(value, bool):
+        raise SearchConfigError("Retries must be a whole number between 0 and 5.")
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        raise SearchConfigError("Retries must be a whole number between 0 and 5.")
+    if not n.is_integer() or not (0 <= n <= 5):
+        raise SearchConfigError("Retries must be a whole number between 0 and 5.")
+    return int(n)
+
+
+def search(query, provider, count, regex=None, region="us-en", safesearch="moderate", timeout=30, retries=2):
     q = str(query or "").strip()
     if not q:
         raise SearchConfigError("Search query is required.")
@@ -58,7 +72,7 @@ def search(query, provider, count, regex=None, region="us-en", safesearch="moder
     for name in names:
         prov = get_provider(name)
         try:
-            raw[name] = prov.search(q, fetch, region or "us-en", safe, timeout)
+            raw[name] = prov.search(q, fetch, region or "us-en", safe, timeout, retries)
         except SearchError as exc:
             errors[name] = {"type": exc.kind, "message": str(exc)}
         else:

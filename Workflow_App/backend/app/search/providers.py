@@ -1,13 +1,26 @@
 # app/search/providers.py
-# Replaceable search providers. No CAPTCHA/anti-bot bypass, no retries on rate limits:
-# a rate-limit or block starts a short cooldown during which the provider is not called again.
+# Replaceable search providers. No CAPTCHA/anti-bot bypass. Rate-limit/block responses are never
+# retried (5-minute cooldown). Network failures are retried, rotating the DuckDuckGo backend.
 
 import os
+import re
 import threading
 import time
 
 COOLDOWN_SECONDS = 300
-DDG_BACKEND = os.getenv("SEARCH_DDG_BACKEND", "")
+DDG_BACKENDS = [
+    b.strip()
+    for b in os.getenv("SEARCH_DDG_BACKENDS", "auto,duckduckgo,brave,mojeek,startpage").split(",")
+    if b.strip()
+] or ["auto"]
+PROXY = os.getenv("SEARCH_PROXY", "").strip() or None
+NETWORK_HINT = " Network unreachable: check internet / VPN / firewall / IPv6, or set SEARCH_PROXY in .env."
+
+_NETWORK_MARKERS = (
+    "connecterror", "connection reset", "connection closed", "connection refused", "connection aborted",
+    "unreachable", "10051", "10054", "10060", "timed out", "timeout", "dns", "error sending request",
+    "broken pipe", "h2 ", "max retries exceeded", "name resolution", "ssl",
+)
 
 _LOCK = threading.Lock()
 _COOLDOWN: dict = {}
@@ -29,6 +42,10 @@ class SearchRateLimitError(SearchError):
     kind = "rate_limit"
 
 
+class SearchNetworkError(SearchError):
+    kind = "network"
+
+
 def _check(name):
     with _LOCK:
         until, msg = _COOLDOWN.get(name, (0.0, ""))
@@ -46,24 +63,46 @@ def reset_cooldowns():
         _COOLDOWN.clear()
 
 
+def _is_rate_limit(name: str, msg: str) -> bool:
+    low = msg.lower()
+    return (
+        "ratelimit" in name
+        or "ratelimit" in low
+        or "rate limit" in low
+        or bool(re.search(r"\b429\b", msg))
+    )
+
+
+def _is_network(name: str, msg: str) -> bool:
+    low = msg.lower()
+    return "timeout" in name or "connect" in name or any(m in low for m in _NETWORK_MARKERS)
+
+
 class Provider:
     name = ""
     label = ""
     empty_hint = ""
 
-    def search(self, query, limit, region, safesearch, timeout):
+    def search(self, query, limit, region, safesearch, timeout, retries=0):
         _check(self.name)
-        try:
-            return self._search(query, limit, region, safesearch, timeout)
-        except SearchRateLimitError as exc:
-            _block(
-                self.name,
-                f"{self.label} is rate-limiting or blocking requests ({exc}). "
-                f"Not retrying for {COOLDOWN_SECONDS // 60} minutes.",
-            )
-            raise
+        last = None
+        for attempt in range(retries + 1):
+            try:
+                return self._search(query, limit, region, safesearch, timeout, attempt)
+            except SearchRateLimitError as exc:
+                _block(
+                    self.name,
+                    f"{self.label} is rate-limiting or blocking requests ({exc}). "
+                    f"Not retrying for {COOLDOWN_SECONDS // 60} minutes.",
+                )
+                raise
+            except SearchNetworkError as exc:
+                last = exc
+                if attempt < retries:
+                    time.sleep(min(1.0 + attempt, 3.0))
+        raise SearchNetworkError(f"{last} (after {retries + 1} attempt(s)).{NETWORK_HINT}")
 
-    def _search(self, query, limit, region, safesearch, timeout):
+    def _search(self, query, limit, region, safesearch, timeout, attempt=0):
         raise NotImplementedError
 
 
@@ -86,36 +125,36 @@ class DuckDuckGo(Provider):
                 "No DuckDuckGo search package is installed. Install it with: pip install ddgs"
             )
 
-    def _search(self, query, limit, region, safesearch, timeout):
+    def _search(self, query, limit, region, safesearch, timeout, attempt=0):
         DDGS, modern = self._client()
         kwargs = {"max_results": limit}
         if region and region != "us-en":
             kwargs["region"] = region
         if safesearch and safesearch != "moderate":
             kwargs["safesearch"] = safesearch
-        if modern and DDG_BACKEND:
-            kwargs["backend"] = DDG_BACKEND
 
-        rows = []
-        for attempt in range(2):
-            try:
-                # brand-new client + connection on every attempt (no reused / stale h2 connection)
-                with DDGS(timeout=timeout) as ddgs:
-                    rows = ddgs.text(query, **kwargs)
-                break
-            except Exception as exc:  # noqa: BLE001
-                name, msg = type(exc).__name__.lower(), str(exc)
-                low = msg.lower()
-                if "ratelimit" in name or "ratelimit" in low or "429" in msg or "202" in msg:
-                    raise SearchRateLimitError(msg[:200] or "rate limit")
-                if "no results" in low:
-                    return []
-                dropped = any(k in low for k in ("connection reset", "h2", "connection closed", "broken pipe"))
-                if dropped and attempt == 0:
-                    continue  # one reset-and-retry with a fresh client for dropped connections only
-                if "timeout" in name or "timed out" in low:
-                    raise SearchError(f"DuckDuckGo search timed out after {timeout}s.")
-                raise SearchError(f"DuckDuckGo search failed: {msg[:300] or type(exc).__name__}")
+        backend = "auto"
+        if modern:
+            backend = DDG_BACKENDS[attempt % len(DDG_BACKENDS)]
+            if backend != "auto":
+                kwargs["backend"] = backend
+
+        client = {"timeout": timeout}
+        if PROXY:
+            client["proxy"] = PROXY
+
+        try:
+            with DDGS(**client) as ddgs:  # fresh client / connection on every attempt
+                rows = ddgs.text(query, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            name, msg = type(exc).__name__.lower(), str(exc)
+            if _is_rate_limit(name, msg):
+                raise SearchRateLimitError(msg[:200] or "rate limit")
+            if "no results" in msg.lower():
+                return []
+            if _is_network(name, msg):
+                raise SearchNetworkError(f"DuckDuckGo search failed [{backend}]: {msg[:220]}")
+            raise SearchError(f"DuckDuckGo search failed: {msg[:300] or type(exc).__name__}")
         return [
             {
                 "title": (r.get("title") or "").strip(),
@@ -135,7 +174,7 @@ class Google(Provider):
         "(no bypass is attempted)."
     )
 
-    def _search(self, query, limit, region, safesearch, timeout):
+    def _search(self, query, limit, region, safesearch, timeout, attempt=0):
         try:
             from googlesearch import search as gsearch
         except ImportError:
@@ -150,7 +189,7 @@ class Google(Provider):
                 gsearch(
                     query, num_results=limit, advanced=True, lang=lang or "en",
                     region=country or None, safe="active" if safesearch != "off" else None,
-                    timeout=timeout, unique=True, sleep_interval=0,
+                    timeout=timeout, unique=True, sleep_interval=0, proxy=PROXY,
                 )
             )
         except requests.HTTPError as exc:
@@ -159,9 +198,9 @@ class Google(Provider):
                 raise SearchRateLimitError(f"HTTP {code}")
             raise SearchError(f"Google search failed with HTTP {code}.")
         except requests.Timeout:
-            raise SearchError(f"Google search timed out after {timeout}s.")
+            raise SearchNetworkError(f"Google search timed out after {timeout}s.")
         except requests.RequestException as exc:
-            raise SearchError(f"Google search network error: {exc}")
+            raise SearchNetworkError(f"Google search network error: {str(exc)[:220]}")
         return [
             {
                 "title": (getattr(i, "title", "") or "").strip(),

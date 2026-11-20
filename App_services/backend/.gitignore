@@ -1,0 +1,17 @@
+.env
+venv
+logs
+
+.env
+!.env.example
+backend/.env
+!backend/.env.example
+backend/logs/
+backend/venv/
+backend/.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+frontend/app_service/.env
+frontend/app_service/.env.local

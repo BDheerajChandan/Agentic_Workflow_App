@@ -66,6 +66,7 @@ def search_urls_node(state, config):
             region=str(cfg.get("region") or "us-en").strip(),
             safesearch=cfg.get("safesearch") or "moderate",
             timeout=service.parse_timeout(cfg.get("timeout")),
+            retries=service.parse_retries(cfg.get("retries")),
         )
     except SearchError as exc:
         raise ValueError(f"Search_URLs: {exc}")

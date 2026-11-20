@@ -28,6 +28,7 @@ const itemBtn = {
 export default function VariableInput({
   label, value, onChange, placeholder = "", nodeId, flowId, variablesVersion,
   mode = "replace", multiline = false, rows = 3,
+  only, // optional: "variables" | "nodes" limits the picker
 }) {
   const { getNodes } = useReactFlow();
   const [open, setOpen] = useState(false);
@@ -62,7 +63,7 @@ export default function VariableInput({
     const out = [];
 
     getNodes()
-      .filter((n) => n.id !== nodeId)
+      .filter((n) => only !== "variables" && n.id !== nodeId)
       .forEach((n) => {
         const def = dyn[n.id] || (io ? io.nodes[n.type] || io.default : null);
         const name = (n.data?.aka || "").trim() || n.type;
@@ -73,7 +74,7 @@ export default function VariableInput({
         out.push({ title: `${name} · ${n.id}`, items });
       });
 
-    if (vars.length) {
+    if (vars.length && only !== "nodes") {
       out.push({
         title: "Variables",
         items: vars.map((v) => ({ ref: `{{${v.name}}}`, label: `${v.name} (${v.visibility})` })),
@@ -88,7 +89,7 @@ export default function VariableInput({
         ),
       }))
       .filter((g) => g.items.length);
-  }, [open, io, vars, dyn, query, nodeId]); // eslint-disable-line
+  }, [open, io, vars, dyn, query, nodeId, only]); // eslint-disable-line
 
   const insert = (ref) => {
     const current = value ?? "";

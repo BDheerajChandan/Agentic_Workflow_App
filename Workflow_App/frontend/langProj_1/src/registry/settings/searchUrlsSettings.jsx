@@ -51,6 +51,10 @@ export default function SearchUrlsSettings({ localData, patch }) {
   const errors = [
     !Number.isInteger(n) || n < 1 || n > 50 ? "Number of URLs must be a whole number between 1 and 50." : "",
     !regexState.valid ? regexState.error : "",
+    Number(localData.timeout ?? 30) < 1 || Number(localData.timeout ?? 30) > 60
+      ? "Timeout must be between 1 and 60 seconds." : "",
+    !Number.isInteger(Number(localData.retries ?? 2)) || Number(localData.retries ?? 2) < 0 || Number(localData.retries ?? 2) > 5
+      ? "Retries must be a whole number between 0 and 5." : "",
   ].filter(Boolean);
 
   return (
@@ -101,10 +105,16 @@ export default function SearchUrlsSettings({ localData, patch }) {
         onChange={(val) => patch({ region: val })}
       />
       <Field
-        label="Timeout (seconds, 1–60)"
+        label="Timeout per attempt (seconds, 1–60)"
         type="number"
         value={localData.timeout ?? 30}
         onChange={(val) => patch({ timeout: val })}
+      />
+      <Field
+        label="Retries on network failure (0–5)"
+        type="number"
+        value={localData.retries ?? 2}
+        onChange={(val) => patch({ retries: val })}
       />
 
       {errors.map((e) => (

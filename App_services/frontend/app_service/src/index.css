@@ -1,0 +1,35 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #020617;
+  --panel: #0a0f1e;
+  --panel-2: #0f172a;
+  --line: #1e293b;
+  --line-2: #334155;
+  --text: #e2e8f0;
+  --dim: #94a3b8;
+  --muted: #64748b;
+  --accent: #6366f1;
+  --accent-2: #7c3aed;
+  --ok: #34d399;
+  --warn: #fb923c;
+  --bad: #f87171;
+  --grey: #64748b;
+  color-scheme: dark;
+}
+
+html, body, #root { min-height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "JetBrains Mono", "Fira Code", "Segoe UI", system-ui, monospace;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: #38bdf8; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }

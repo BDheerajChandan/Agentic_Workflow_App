@@ -158,6 +158,7 @@ export const nodeDefaults: Record<string, Record<string, any>> = {
     safesearch: "moderate",
     region: "us-en",
     timeout: 30,
+    retries: 2,
   },
   nlp: { features: [], options: {}, allow_model_download: false },
   aqi: {

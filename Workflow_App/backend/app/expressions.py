@@ -204,14 +204,18 @@ def _ev(node, names):
     if isinstance(node, ast.UnaryOp):
         v = _ev(node.operand, names)
         if isinstance(node.op, ast.Not):
-            return not v
+            return not _truth(v)
+        if isinstance(v, LooseStr):
+            v = _auto_parse(v)
         if isinstance(node.op, ast.USub) and _is_num(v):
             return -v
+        if isinstance(node.op, ast.UAdd) and _is_num(v):
+            return v
         raise ExpressionError("Unsupported unary operation.")
     if isinstance(node, ast.BoolOp):
         if isinstance(node.op, ast.And):
-            return all(bool(_ev(v, names)) for v in node.values)
-        return any(bool(_ev(v, names)) for v in node.values)
+            return all(_truth(_ev(v, names)) for v in node.values)
+        return any(_truth(_ev(v, names)) for v in node.values)
     if isinstance(node, ast.Compare):
         left = _ev(node.left, names)
         for op, comp in zip(node.ops, node.comparators):
@@ -219,16 +223,20 @@ def _ev(node, names):
             if not sym:
                 raise ExpressionError("Unsupported comparison operator.")
             right = _ev(comp, names)
-            if not compare(left, sym, right):
+            l2, r2 = _pair(left, right)
+            if not compare(l2, sym, r2):
                 return False
             left = right
         return True
     if isinstance(node, ast.BinOp):
-        a, b = _ev(node.left, names), _ev(node.right, names)
+        a, b = _pair(_ev(node.left, names), _ev(node.right, names), arith=True)
         if isinstance(node.op, ast.Add) and isinstance(a, str) and isinstance(b, str):
             return a + b
         if not (_is_num(a) and _is_num(b)):
-            raise ExpressionError("Arithmetic requires numbers.")
+            raise ExpressionError(
+                f"Arithmetic requires numbers (got {type(a).__name__} and {type(b).__name__}). "
+                "Set the Expression Type to int/float or use {{ref:int}}."
+            )
         try:
             if isinstance(node.op, ast.Add):
                 return a + b
@@ -238,6 +246,8 @@ def _ev(node, names):
                 return a * b
             if isinstance(node.op, ast.Div):
                 return a / b
+            if isinstance(node.op, ast.FloorDiv):
+                return a // b
             if isinstance(node.op, ast.Mod):
                 return a % b
         except ZeroDivisionError:
@@ -261,7 +271,18 @@ def _keywords(expr: str) -> str:
     return "".join(parts)
 
 
-def evaluate_expression(expr, ctx):
+_CAST = re.compile(r"^(.*?)\s*:\s*([A-Za-z]+)\s*$")
+
+
+def _split_cast(inner: str):
+    m = _CAST.match(inner)
+    if m and m.group(2).strip().lower() in TYPE_ALIASES:
+        return m.group(1).strip(), m.group(2).strip().lower()
+    return inner.strip(), None
+
+
+def evaluate_expression(expr, ctx, default_type="auto"):
+    """{{ref}} / {{ref:int}} placeholders are typed (auto/str/int/float/bool/list/dict/null)."""
     if not isinstance(expr, str) or not expr.strip():
         raise ExpressionError("Expression is empty.")
     if len(expr) > MAX_EXPR_LEN:
@@ -269,8 +290,15 @@ def evaluate_expression(expr, ctx):
     names: dict = {}
 
     def sub(m):
+        ref, cast = _split_cast(m.group(1))
+        value = resolve_ref(ref, ctx)
+        t = normalize_type(cast or default_type)
+        if t == "auto":
+            value = LooseStr(value) if isinstance(value, str) else value
+        else:
+            value = coerce_value(value, t, f"{{{{{ref}}}}}")
         key = f"__v{len(names)}"
-        names[key] = resolve_ref(m.group(1), ctx)
+        names[key] = value
         return key
 
     prepared = _keywords(_REF.sub(sub, expr)).strip()
@@ -282,7 +310,102 @@ def evaluate_expression(expr, ctx):
         raise ExpressionError("Expression is too complex.")
     if sum(1 for _ in ast.walk(tree)) > MAX_AST_NODES:
         raise ExpressionError("Expression is too complex.")
-    return _ev(tree.body, names)
+    result = _ev(tree.body, names)
+    return _auto_parse(result) if isinstance(result, LooseStr) else result
+
+# ─── Operand typing (If-Else left / right type) ───────────────────────────────
+
+TYPE_ALIASES = {
+    "": "auto", "auto": "auto",
+    "str": "str", "string": "str",
+    "int": "int", "integer": "int",
+    "float": "float", "number": "float",
+    "bool": "bool", "boolean": "bool",
+    "null": "null", "none": "null",
+    "list": "list", "array": "list",
+    "dict": "dict", "object": "dict", "json": "dict",
+}
+
+
+def normalize_type(typ) -> str:
+    t = TYPE_ALIASES.get(str(typ or "auto").strip().lower())
+    if not t:
+        raise ExpressionError(f"Unsupported type '{typ}'. Use auto, str, int, float, bool or null.")
+    return t
+
+
+def _unquote(s: str) -> str:
+    t = s.strip()
+    return t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'" else s
+
+
+def coerce_value(value, typ, label="value"):
+    """Cast a resolved (variable / node / static) value to an explicit type. 'auto' keeps it as is."""
+    t = normalize_type(typ)
+    if t == "auto":
+        return value
+    try:
+        if t == "null":
+            return None
+        if t == "str":
+            return "" if value is None else _text(value)
+        if t in ("list", "dict"):
+            v = value
+            if isinstance(v, str):
+                v = json.loads(v)
+            if isinstance(v, tuple):
+                v = list(v)
+            if not isinstance(v, list if t == "list" else dict):
+                raise ValueError
+            return v
+        if t == "bool":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)) and value in (0, 1):
+                return bool(value)
+            s = str(value).strip().lower()
+            if s in ("true", "1", "yes"):
+                return True
+            if s in ("false", "0", "no"):
+                return False
+            raise ValueError
+        if isinstance(value, bool) or value is None:
+            raise ValueError
+        if t == "int":
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                if value.is_integer():
+                    return int(value)
+                raise ValueError
+            s = str(value).strip()
+            if _INT.match(s):
+                return int(s)
+            if _NUM.match(s) and float(s).is_integer():
+                return int(float(s))
+            raise ValueError
+        if t == "float":
+            if isinstance(value, (int, float)):
+                return float(value)
+            s = str(value).strip()
+            if _NUM.match(s):
+                return float(s)
+            raise ValueError
+    except (ValueError, TypeError):
+        shown = value if isinstance(value, str) else _text(value)
+        raise ExpressionError(f"{label} '{shown}' cannot be converted to {t}.")
+    raise ExpressionError(f"Unsupported type '{typ}'.")
+
+
+def _typed_operand(raw, typ, ctx, label):
+    """Resolve {{refs}} or a static value, then cast to the chosen type."""
+    if has_template(raw):
+        value = interpolate(raw, ctx)
+    elif isinstance(raw, str):
+        value = _unquote(raw) if normalize_type(typ) == "str" else raw
+    else:
+        value = raw
+    return coerce_value(value, typ, label)
 
 
 # ─── Condition editor rows ────────────────────────────────────────────────────
@@ -291,8 +414,16 @@ def evaluate_condition(cond: dict, ctx: dict) -> bool:
     if not isinstance(cond, dict):
         raise ExpressionError("Invalid condition.")
     op = str(cond.get("operator") or "==").strip()
+
+
+    
     if op.lower() in ("custom", "custom expression"):
-        return bool(evaluate_expression(cond.get("expression") or cond.get("custom_expression"), ctx))
+        return bool(evaluate_expression(
+            cond.get("expression") or cond.get("custom_expression"),
+            ctx,
+            cond.get("expression_type") or "auto",
+        ))
+    
     if op not in OPERATORS:
         raise ExpressionError(f"Unsupported operator '{op}'.")
 
@@ -309,10 +440,17 @@ def evaluate_condition(cond: dict, ctx: dict) -> bool:
     if isinstance(raw_l, str) and not has_template(raw_l):
         left = parse_literal(raw_l)
 
-    # variables arriving as text are coerced to the type of a typed right operand
-    if isinstance(left, str) and not isinstance(right, str) and not isinstance(right, (list, dict)):
+    # explicit operand types (auto = legacy behaviour)
+    l_type, r_type = normalize_type(cond.get("left_type")), normalize_type(cond.get("right_type"))
+    if l_type != "auto":
+        left = _typed_operand(raw_l, l_type, ctx, "Left operand")
+    if r_type != "auto":
+        right = _typed_operand(raw_r, r_type, ctx, "Right operand")
+
+    # auto operands arriving as text are coerced to the type of a typed other side
+    if l_type == "auto" and isinstance(left, str) and not isinstance(right, str) and not isinstance(right, (list, dict)):
         left = parse_literal(left)
-    elif isinstance(right, str) and not isinstance(left, str) and not r_quoted and not r_static:
+    elif r_type == "auto" and isinstance(right, str) and not isinstance(left, str) and not r_quoted and not r_static:
         right = parse_literal(right)
     return compare(left, op, right)
 
@@ -364,3 +502,51 @@ def cast_case_value(value, typ):
     except ValueError:
         raise ExpressionError(f"Case value '{value}' is not a valid {t}.")
     raise ExpressionError(f"Unsupported case type '{typ}'.")
+
+class LooseStr(str):
+    """Text from an auto-typed {{ref}}: acts as number/bool/null/list when the other side needs it."""
+
+
+def _auto_parse(v):
+    s = str(v).strip()
+    low = s.lower()
+    if low in ("null", "none"):
+        return None
+    if low == "true":
+        return True
+    if low == "false":
+        return False
+    if _INT.match(s):
+        return int(s)
+    if _NUM.match(s):
+        return float(s)
+    if s[:1] in ("[", "{"):
+        try:
+            return json.loads(s)
+        except ValueError:
+            pass
+    return str(v)
+
+
+def _truth(v):
+    return bool(_auto_parse(v)) if isinstance(v, LooseStr) else bool(v)
+
+
+def _pair(a, b, arith=False):
+    la, lb = isinstance(a, LooseStr), isinstance(b, LooseStr)
+    if not (la or lb):
+        return a, b
+    if la and lb:
+        pa, pb = _auto_parse(a), _auto_parse(b)
+        if arith or (_is_num(pa) and _is_num(pb)) or (type(pa) is type(pb) and not isinstance(pa, str)):
+            return pa, pb
+        return str(a), str(b)
+    loose, other = (a, b) if la else (b, a)
+    if isinstance(other, str):
+        conv = str(loose)
+    elif isinstance(other, (list, tuple)):
+        p = _auto_parse(loose)
+        conv = p if any(values_equal(p, i) for i in other) else str(loose)
+    else:
+        conv = _auto_parse(loose)
+    return (conv, b) if la else (a, conv)

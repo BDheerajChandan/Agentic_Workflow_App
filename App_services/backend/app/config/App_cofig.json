@@ -1,0 +1,106 @@
+{
+  "project_2": {
+    "id": "project_2",
+    "name": "DJ Chatbot",
+    "path": "../dj_chatbot",
+    "description": "Chatbot front end for DJ Workflows bots",
+    "enabled": true,
+    "services": {}
+  },
+  "dj_chatbot": {
+    "id": "dj_chatbot",
+    "name": "dj_chatbot",
+    "path": "../dj_chatbot",
+    "description": "",
+    "enabled": true,
+    "services": {
+      "frontend": {
+        "id": "dj_chatbot",
+        "name": "dj_chatbot",
+        "type": "frontend",
+        "path": "../dj_chatbot",
+        "runtime": "node",
+        "host": "localhost",
+        "bind_address": "127.0.0.1",
+        "port": 5174,
+        "container_port": 5176,
+        "protocol": "http",
+        "health_check": "/",
+        "container_name": "dj_dj_chatbot",
+        "docker_image": "node:20-alpine",
+        "enabled": true,
+        "auto_start": false,
+        "auto_restart": true,
+        "depends_on": [],
+        "env": {},
+        "start_period_seconds": 300
+      }
+    }
+  },
+  "workflow_backend": {
+    "id": "workflow_backend",
+    "name": "workflow_backend",
+    "path": "../Workflow_App/backend",
+    "description": "",
+    "enabled": true,
+    "services": {
+      "backend": {
+        "id": "workflow_backend",
+        "name": "workflow_backend",
+        "type": "backend",
+        "path": "../Workflow_App/backend",
+        "runtime": "python",
+        "host": "localhost",
+        "bind_address": "127.0.0.1",
+        "port": 8001,
+        "container_port": 8001,
+        "protocol": "http",
+        "health_check": "/",
+        "container_name": "dj_workflow_backend",
+        "docker_image": "python:3.11",
+        "enabled": true,
+        "auto_start": false,
+        "auto_restart": true,
+        "depends_on": [],
+        "env": {
+          "DB_HOST": "host.docker.internal",
+          "DB_NAME": "${DB_NAME}",
+          "DB_PORT": "5432",
+          "DB_USER": "${DB_USER}",
+          "DB_PASSWORD": "${DB_PASSWORD}"
+        },
+        "start_period_seconds": 900
+      }
+    }
+  },
+  "workflow_frontend": {
+    "id": "workflow_frontend",
+    "name": "workflow_frontend",
+    "path": "../Workflow_App/frontend",
+    "description": "",
+    "enabled": true,
+    "services": {
+      "frontend": {
+        "id": "workflow_frontend",
+        "name": "workflow_frontend",
+        "type": "frontend",
+        "path": "../Workflow_App/frontend/langProj_1",
+        "runtime": "node",
+        "host": "localhost",
+        "bind_address": "127.0.0.1",
+        "port": 5173,
+        "container_port": 5173,
+        "protocol": "http",
+        "health_check": "/",
+        "container_name": "dj_workflow_frontend",
+        "docker_image": "node:20-alpine",
+        "enabled": true,
+        "auto_start": false,
+        "auto_restart": true,
+        "depends_on": [],
+        "env": {},
+        "start_period_seconds": 300
+      }
+    }
+  }
+}

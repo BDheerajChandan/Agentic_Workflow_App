@@ -4,6 +4,7 @@ Chroma_db
 *.pyc
 .env
 
+*.txt
 *.pdf
 *.pptx
 *.doc
@@ -12,7 +13,8 @@ Chroma_db
 *.rtf
 *.odt
 
-
 download/
 aqi_cache/
+
 file_store/
+chroma/
