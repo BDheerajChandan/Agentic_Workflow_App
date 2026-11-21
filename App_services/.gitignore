@@ -19,6 +19,6 @@ dist/
 frontend/app_service/.env
 frontend/app_service/.env.local
 
-.yml
-docker-compose.yml
+# .yml
+# docker-compose.yml
 App_services/.env.example
