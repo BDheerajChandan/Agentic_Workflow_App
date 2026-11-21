@@ -184,7 +184,15 @@ async def resume_pause(pause_id: int, reason: str = "resumed", extra: dict | Non
         except Exception as exc:  # noqa: BLE001
             print(f"⚠️  Failed to resolve output display: {exc}")
 
-    return {"result": result, "error": error, "paused": paused, "display": display}
+    outcome = {"result": result, "error": error, "paused": paused, "display": display}
+
+    if row.get("operation") != "hitl":
+        try:
+            await db.save_pause_outcome(pause_id, outcome)
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️  Failed to persist resumed outcome: {exc}")
+
+    return outcome
 
 
 async def expire_pause(pause_id: int) -> None:

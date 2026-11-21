@@ -87,6 +87,9 @@ from app.database.hitl_repository import (  # noqa: F401
     get_pause_detail,
     list_pauses,
     list_pending_hitl,
+    reschedule_pause,
+    save_pause_outcome,
+    get_pause_outcome,
 )
 
 from app.database.documentation_repository import (  # noqa: F401

@@ -399,6 +399,30 @@ export const cancelTimePause = async (pauseId: number) => {
   return res.data as { message: string };
 };
 
+
+export const rescheduleTimePause = async (
+  pauseId: number,
+  config: Record<string, any>,
+  auto = false
+) => {
+  const res = await axios.post(`${BASE_URL}/time-operation/pauses/${pauseId}/reschedule`, { config, auto });
+  return res.data as { message: string; pause_id: number; resume_at: string };
+};
+
+export interface TimePauseOutcome {
+  pause_id: number;
+  status: "pending" | "resuming" | "done" | "failed" | "cancelled" | string;
+  operation: string;
+  resume_at: string | null;
+  error: string | null;
+  outcome: { result?: any; error?: string | null; paused?: boolean; display?: any } | null;
+}
+
+export const getTimePauseOutcome = async (pauseId: number) => {
+  const res = await axios.get(`${BASE_URL}/time-operation/pauses/${pauseId}/outcome`);
+  return res.data as TimePauseOutcome;
+};
+
 // ─── HITL ─────────────────────────────────────────────────────────────────────
 
 export const validateQuestionsFile = async (file_name: string, content: string) => {

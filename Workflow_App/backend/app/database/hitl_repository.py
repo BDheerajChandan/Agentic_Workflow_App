@@ -189,3 +189,67 @@ async def fail_interrupted_pauses() -> int:
             """
         )
     return deleted_count(result)
+
+
+
+async def reschedule_pause(
+    pause_id: int, operation: str, resume_at, scheduled_for, node_patch: dict,
+) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT node_id, nodes, info FROM paused_runs
+                WHERE pause_id=$1 AND status='pending' AND operation <> 'hitl'
+                FOR UPDATE
+                """,
+                pause_id,
+            )
+            if not row:
+                return None
+            nodes = json_field(row["nodes"]) or []
+            for n in nodes:
+                if isinstance(n, dict) and n.get("id") == row["node_id"]:
+                    n["data"] = {**(n.get("data") or {}), **(node_patch or {})}
+            info = json_field(row["info"]) or {}
+            info["scheduled_for"] = scheduled_for
+            await conn.execute(
+                """
+                UPDATE paused_runs
+                SET operation=$2, resume_at=$3, hold_expires_at=NULL, nodes=$4, info=$5
+                WHERE pause_id=$1
+                """,
+                pause_id, operation, resume_at, json.dumps(nodes), json.dumps(info),
+            )
+    return {"pause_id": pause_id, "operation": operation, "resume_at": resume_at}
+
+
+async def save_pause_outcome(pause_id: int, outcome: dict) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE paused_runs
+            SET info = jsonb_set(COALESCE(info, '{}'::jsonb), '{outcome}', $2::jsonb)
+            WHERE pause_id=$1
+            """,
+            pause_id, json.dumps(outcome),
+        )
+
+
+async def get_pause_outcome(pause_id: int) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT pause_id, flow_id, node_id, operation, status, resume_at, error, info
+            FROM paused_runs WHERE pause_id=$1
+            """,
+            pause_id,
+        )
+    if not row:
+        return None
+    d = jsonable(row)
+    d["info"] = json_field(row["info"]) or {}
+    return d

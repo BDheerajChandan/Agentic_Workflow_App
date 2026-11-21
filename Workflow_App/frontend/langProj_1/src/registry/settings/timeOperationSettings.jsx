@@ -1,8 +1,8 @@
 // src/registry/settings/timeOperationSettings.jsx
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  signalTimeOperation, listTimePauses, resumeTimePause, cancelTimePause,
+  signalTimeOperation, listTimePauses, resumeTimePause, cancelTimePause, rescheduleTimePause,
 } from "../../services/api";
 import { Field, SelectField } from "./fields";
 import {
@@ -75,6 +75,9 @@ export default function TimeOperationSettings({ localData, patch, flowId, select
     return () => clearInterval(t);
   }, [loadPauses]);
 
+  const pausesRef = useRef([]);
+  useEffect(() => { pausesRef.current = pauses; }, [pauses]);
+
   const pastWarning =
     op === "until" && !tz && localData.scheduled_date && localData.scheduled_clock &&
     new Date(`${localData.scheduled_date}T${localData.scheduled_clock}`) < new Date()
@@ -100,6 +103,52 @@ export default function TimeOperationSettings({ localData, patch, flowId, select
     }
     loadPauses();
   };
+
+  const timeCfg = {
+    operation: op,
+    duration: localData.duration ?? 5,
+    unit: localData.unit || "seconds",
+    scheduled_date: localData.scheduled_date,
+    scheduled_clock: localData.scheduled_clock,
+    timezone: tz,
+    past_behavior: localData.past_behavior || "error",
+    max_wait_seconds: localData.max_wait_seconds ?? 86400,
+  };
+  const timeSig = `${selectedNodeId}|${JSON.stringify(timeCfg)}`;
+  const lastSig = useRef(timeSig);
+  const hasErrors = errors.length > 0;
+
+  useEffect(() => {
+    if (lastSig.current === timeSig) return undefined;
+    lastSig.current = timeSig;
+    if (op !== "until" || flowId == null || hasErrors) return undefined;
+
+    const timer = setTimeout(async () => {
+      const targets = pausesRef.current.filter((p) => p.status === "pending" && p.resume_at);
+      if (!targets.length) return;
+      let moved = 0;
+      let failure = "";
+      for (const p of targets) {
+        try {
+          await rescheduleTimePause(p.pause_id, timeCfg, true);
+          moved += 1;
+        } catch (err) {
+          failure = err?.response?.data?.detail || "Reschedule failed.";
+        }
+      }
+      if (moved) setMsg({ text: `Rescheduled ${moved} waiting run(s) to the new time.`, err: false });
+      else if (failure) setMsg({ text: failure, err: true });
+      loadPauses();
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeSig]);
+
+  const reschedule = (p) =>
+    run(async () => {
+      const r = await rescheduleTimePause(p.pause_id, timeCfg);
+      return { message: `Rescheduled. Run #${p.pause_id} will continue at ${fmt(r.resume_at)}.` };
+    }, "Rescheduled.");
 
   const signalInline = (action) =>
     run(
@@ -210,6 +259,17 @@ export default function TimeOperationSettings({ localData, patch, flowId, select
               >
                 ▶ Resume
               </button>
+              {(op === "until" || op === "duration") && (
+                <button
+                  type="button"
+                  style={miniBtn}
+                  title="Make this waiting run continue at the time currently set above"
+                  disabled={hasErrors}
+                  onClick={() => reschedule(p)}
+                >
+                  ⟳ Reschedule
+                </button>
+              )}
               <button
                 type="button"
                 style={miniBtnDanger}

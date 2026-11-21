@@ -217,3 +217,55 @@ def time_operation_node(state, config):
         "completed_at": completed.isoformat(),
         "elapsed_seconds": round((completed - started).total_seconds(), 3),
     })
+
+
+
+RESCHEDULE_KEYS = (
+    "operation", "duration", "unit",
+    "scheduled_date", "scheduled_clock", "timezone",
+    "past_behavior", "max_wait_seconds",
+)
+
+
+def plan_reschedule(cfg, now=None, allow_past=True):
+    cfg = cfg or {}
+    now = now or datetime.now(timezone.utc)
+    op = str(cfg.get("operation") or "duration").strip().lower()
+    if op not in ("duration", "until"):
+        raise ValueError(
+            "Time Operation: only 'Wait for Duration' and 'Wait Until Scheduled Time' "
+            "can be rescheduled. Hold runs are resumed manually."
+        )
+
+    max_wait = _max_wait(cfg)
+    scheduled_for = None
+
+    if op == "duration":
+        unit = str(cfg.get("unit") or "seconds").strip().lower()
+        if unit not in UNITS:
+            raise ValueError("Time Operation: unit must be seconds, minutes or hours.")
+        seconds = _non_negative(cfg.get("duration"), "Duration") * UNITS[unit]
+    else:
+        target = _target(cfg)
+        scheduled_for = target
+        seconds = (target - now).total_seconds()
+        if seconds <= 0:
+            continue_now = str(cfg.get("past_behavior") or "error").strip().lower() == "continue"
+            if not (continue_now and allow_past):
+                raise ValueError(
+                    "Time Operation: the new scheduled time is in the past, so the run was not "
+                    "rescheduled. Pick a future time, or use the Reschedule button with "
+                    "'If time is in the past: Continue immediately'."
+                )
+            seconds = 0
+
+    if seconds > max_wait:
+        raise ValueError(
+            f"Time Operation: wait of {int(seconds)}s exceeds the maximum allowed wait of {int(max_wait)}s."
+        )
+
+    return {
+        "operation": op,
+        "resume_at": now + timedelta(seconds=seconds),
+        "scheduled_for": scheduled_for.isoformat() if scheduled_for else None,
+    }

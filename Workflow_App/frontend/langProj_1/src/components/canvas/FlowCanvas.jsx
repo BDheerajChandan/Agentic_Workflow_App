@@ -32,6 +32,7 @@ import { downloadJson } from "../../utils/download";
 import { buildExport, parseImport, prepareImport } from "../../utils/flowTransfer";
 import { migrateLegacyIfElse } from "../../utils/ifElseMigration";
 import { switchDuplicateErrors } from "../../utils/caseValue";
+import { watchTimePause } from "../../nodes/time_operation/watchTimePause";
 
 let _id = 1;
 const getNodeId = () => `node_${_id++}`;
@@ -98,6 +99,9 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
   const [importBusy, setImportBusy] = useState(false);
   const [transferMsg, setTransferMsg] = useState(null);
   const importFileRef = useRef(null);
+
+  const timeWatchRef = useRef(null);
+  useEffect(() => () => timeWatchRef.current?.(), []);
 
   const playgroundRef = useRef(null);
   useEffect(() => {
@@ -301,6 +305,8 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
 
   // ── Run (SSE-driven execution highlighting) ───────────────────────────────
   const handleRun = async () => {
+    timeWatchRef.current?.();
+    timeWatchRef.current = null;
     setError(null);
     setRunning(true);
     setOutputOpen(true);
@@ -338,6 +344,27 @@ function FlowCanvas({ routeSlug, groupId, onBack }) {
           display: done.display ?? display,
         })
       );
+
+      const saved = done.result;
+      if (saved?.paused && !saved?.interaction && saved?.pause_id != null) {
+        timeWatchRef.current = watchTimePause(saved.pause_id, {
+          onFinished: async (o) => {
+            timeWatchRef.current = null;
+            const ids = Object.keys(o.result?.data?.__nodes || {});
+            if (ids.length) setCompletedNodeIds(new Set(ids));
+            setError(null);
+            setOutputOpen(true);
+            setOutput(
+              await buildOutputDisplay({ nodes, flowId, result: o.result, traces, display: o.display })
+            );
+          },
+          onError: (msg) => {
+            timeWatchRef.current = null;
+            setOutputOpen(true);
+            setError(msg);
+          },
+        });
+      }
     } catch (err) {
       setError(err?.message || "Execution failed");
     } finally {
